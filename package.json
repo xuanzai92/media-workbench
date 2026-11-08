@@ -33,10 +33,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/woniuniuniu/dsh-media-desk.git"
+    "url": "git+https://github.com/xuanzai92/media-workbench.git"
   },
-  "homepage": "https://github.com/woniuniuniu/dsh-media-desk#readme",
-  "bugs": "https://github.com/woniuniuniu/dsh-media-desk/issues",
+  "homepage": "https://github.com/xuanzai92/media-workbench#readme",
+  "bugs": "https://github.com/xuanzai92/media-workbench/issues",
   "scripts": {
     "build": "node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",

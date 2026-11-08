@@ -99,17 +99,39 @@ Media Workbench 是一个装在 DeepSeek Harness 侧栏里的内容创作工作�
 
 要求 DeepSeek Harness `0.2.1-rc.5` 及以上的 `0.2.x` 版本。
 
-**1. 安装。** 在 DeepSeek Harness 桌面版中进入「插件」→「添加插件」，输入 `media-workbench` 并安装。
+**1. 安装。** 这个仓库目前还没有发布到 npm。按你使用的来源选择一种安装方式：
 
-也可以使用命令行。桌面版安装前先完全退出（⌘Q），安装后重新打开；网页版安装后重启 `dsh web`。如果终端里没有 `dsh`，先在桌面版菜单中启用命令行工具。
-
-```bash
-dsh plugin --profile desktop add media-workbench
-```
+当前目录开发（推荐）：
 
 ```bash
-dsh plugin --profile web add media-workbench
+dsh plugin --profile desktop add "file:/绝对路径/media-workbench"
+dsh plugin --profile web add "file:/绝对路径/media-workbench"
 ```
+
+从 GitHub 安装：
+
+```bash
+dsh plugin --profile desktop add github:xuanzai92/media-workbench
+dsh plugin --profile web add github:xuanzai92/media-workbench
+```
+
+GitHub 安装会在本机执行 `prepare` 来生成浏览器端的 `dist/client.js`。如果 pnpm 提示需要允许构建，在对应 profile 的 `$DSH_HOME/profiles/<profile>/pnpm-workspace.yaml` 中加入下面的配置，再重新执行安装：
+
+```yaml
+allowBuilds:
+  media-workbench: true
+```
+
+也可以先在仓库目录执行 `npm pack`，再安装生成的 tarball；这种方式已经包含构建后的浏览器端文件：
+
+```bash
+npm pack
+dsh plugin --profile web add "file:/绝对路径/media-workbench-2.6.2.tgz"
+```
+
+如果以后把包发布到 npm，才可以在桌面版「插件」→「添加插件」中输入 `media-workbench`，或直接执行 `dsh plugin --profile <profile> add media-workbench`。
+
+命令行安装前，桌面版需要完全退出（⌘Q），安装后重新打开；网页版安装后重启 `dsh web`。如果终端里没有 `dsh`，先在桌面版菜单中启用命令行工具。
 
 **2. 打开。** 侧栏会出现「自媒体工作台」。第一次打开会有示例数据，确认流程后可以点击右上角「示例数据 · 清空」。
 

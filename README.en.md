@@ -79,17 +79,39 @@ The workspace supports content planning for RedNote, Douyin, Bilibili, WeChat, T
 
 Requires DeepSeek Harness `0.2.1-rc.5` or later in the `0.2.x` line.
 
-**1. Install.** In the DeepSeek Harness desktop app, go to Plugins → Add plugin, enter `media-workbench`, and install it.
+**1. Install.** This repository is not published to npm yet. Choose the source you want to install from:
 
-You can also use the command line. Quit the desktop app completely (⌘Q) before installing and reopen it afterwards. For the web version, restart `dsh web`. If the `dsh` command is not available, enable it from the desktop app menu.
-
-```bash
-dsh plugin --profile desktop add media-workbench
-```
+From the current checkout (recommended for development):
 
 ```bash
-dsh plugin --profile web add media-workbench
+dsh plugin --profile desktop add "file:/absolute/path/to/media-workbench"
+dsh plugin --profile web add "file:/absolute/path/to/media-workbench"
 ```
+
+From GitHub:
+
+```bash
+dsh plugin --profile desktop add github:xuanzai92/media-workbench
+dsh plugin --profile web add github:xuanzai92/media-workbench
+```
+
+A GitHub install runs `prepare` locally to build the browser half at `dist/client.js`. If pnpm asks you to allow the build, add this to `$DSH_HOME/profiles/<profile>/pnpm-workspace.yaml` and run the install again:
+
+```yaml
+allowBuilds:
+  media-workbench: true
+```
+
+You can also run `npm pack` in the repository and install the resulting tarball. The tarball already contains the built browser half:
+
+```bash
+npm pack
+dsh plugin --profile web add "file:/absolute/path/to/media-workbench-2.6.2.tgz"
+```
+
+After the package is published to npm, the desktop Plugins → Add plugin flow can accept `media-workbench`, and the CLI can use `dsh plugin --profile <profile> add media-workbench`.
+
+Quit the desktop app completely (⌘Q) before installing and reopen it afterwards. For the web version, restart `dsh web`. If the `dsh` command is not available, enable it from the desktop app menu.
 
 **2. Open.** Media Workbench appears in the sidebar. The first launch includes sample data; clear it from the top right when you are ready to use your own content.
 

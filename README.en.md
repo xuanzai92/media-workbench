@@ -7,37 +7,33 @@
 
 <h1 align="center">Media Workbench</h1>
 
-<p align="center"><b>A DeepSeek Harness plugin. Capture an idea, and one click drafts the script, cover, images and storyboard.</b></p>
-
-<p align="center">Built by <a href="https://www.xiaohongshu.com/user/profile/5faedce8000000000101c8a3"><b>蜗牛的科技笔记</b></a> (Snail's Tech Notes), a tech creator on RedNote, as the desk behind their own daily posts.</p>
+<p align="center"><b>A DeepSeek Harness content workspace: capture ideas, draft content, schedule posts and review results in one place.</b></p>
 
 <p align="center">
   <a href="#get-started">Install</a> ·
-  <a href="#what-it-costs">What it costs</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#models-and-services">Models and services</a> ·
   <a href="#faq">FAQ</a> ·
   <a href="README.md">简体中文</a>
 </p>
 
 <p align="center">
-  <img alt="DeepSeek Harness 0.2.x" src="https://img.shields.io/badge/DeepSeek%20Harness-0.2.x-111?style=flat-square">
-  <img alt="Mac desktop and web" src="https://img.shields.io/badge/Mac%20desktop-web-111?style=flat-square">
+  <img alt="DeepSeek Harness plugin" src="https://img.shields.io/badge/DeepSeek%20Harness-plugin-111?style=flat-square">
+  <img alt="Desktop and web" src="https://img.shields.io/badge/Desktop-web-111?style=flat-square">
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/MIT-open%20source-111?style=flat-square"></a>
-  <a href="https://github.com/woniuniuniu/dsh-media-desk/stargazers"><img alt="Star" src="https://img.shields.io/github/stars/woniuniuniu/dsh-media-desk?style=flat-square&color=111&label=Star"></a>
 </p>
 
 <br>
 
 ## What it is
 
-Media Workbench is a page in the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) sidebar. It opens on a wall of your ideas, one line each. Open one, click **Draft it**, and you get a spoken script, a title, a video cover, images and a six-frame storyboard. Ask for changes in the chat on the left and the draft updates on the right. Then drag the finished piece onto the calendar, publish it, and come back for the numbers.
+Media Workbench is a content workspace that runs in the DeepSeek Harness sidebar. Save an idea, a link or a piece of media, then generate a title, spoken script, cover, images and a six-frame storyboard. Schedule the finished piece on the calendar and review its performance later.
 
-There are five pages: **Ideas · Content · Schedule · Insights · Styles**. The interface is available in English and Chinese. By default it follows the DeepSeek Harness language, and you can lock it to either one in the plugin settings. When the interface is in English, scripts, titles and storyboards are written in English. The web version also works in a phone browser.
+The interface is available in English and Chinese. It works in the desktop and web versions, and keeps your data on your computer unless you configure an external service.
 
-It works with TikTok, Instagram, YouTube and X as well as Chinese platforms (RedNote, Douyin, Bilibili, WeChat).
+## Features
 
-<br>
-
-## Draft it in one click
+### Draft a complete piece in one click
 
 <table>
 <tr>
@@ -48,29 +44,25 @@ It works with TikTok, Instagram, YouTube and X as well as Chinese platforms (Red
   </picture>
 </td>
 <td valign="top">
-<p><b>Everything fills in together.</b></p>
-<p>The layout appears as soon as you open an idea. The title, script, cover, images and six storyboard frames are generated in parallel and appear as each one is ready.</p>
+<p><b>Generate the whole structure.</b></p>
+<p>The title, script, cover, images and six storyboard frames are generated together and appear as each one is ready.</p>
 <p><b>Ask for a change.</b></p>
-<p>Try "make it clearer", "shoot frame 3 from above" or "bolder cover text". The draft updates as you watch, and every change can be undone.</p>
-<p><b>Take it with you.</b></p>
-<p>Edit the script in place, copy it, or save the whole piece (cover, images and frames) to one folder.</p>
+<p>Rewrite a title, change the tone, revise one storyboard frame or redraw an image in a sentence. Every change can be undone.</p>
+<p><b>Export and use it.</b></p>
+<p>Edit and copy the script, or save the complete piece to one folder.</p>
 </td>
 </tr>
 </table>
 
-<br>
-
-## The idea wall
+### Ideas, scheduling, insights and styles
 
 <table>
 <tr>
 <td valign="top" width="38%">
-<p><b>One line, one idea.</b></p>
-<p>Text, links, images, videos and quotes all become cards. Spread them out on an infinite canvas, or switch to a feed sorted by date.</p>
-<p><b>Related ideas come to you.</b></p>
-<p>Type "agent" and press Enter. Your new idea is saved, and every earlier idea that mentions agents moves next to it, sorted by relevance.</p>
-<p><b>An assistant on the side.</b></p>
-<p>"Write up today's best idea", "What's coming up?", "From now on, keep titles under 10 words". Ask in a sentence and it's done.</p>
+<p><b>Capture ideas quickly.</b> Text, links, images, videos and quotes become cards. Use an infinite canvas or a date-sorted feed.</p>
+<p><b>Find related ideas.</b> Enter a keyword and related cards are grouped by relevance.</p>
+<p><b>Keep creating.</b> Schedule finished pieces, review trends and platform breakdowns, and turn useful patterns into writing rules.</p>
+<p><b>Choose a voice.</b> Use the built-in presets or learn an editable style card from your own posts.</p>
 </td>
 <td>
   <picture>
@@ -81,78 +73,15 @@ It works with TikTok, Instagram, YouTube and X as well as Chinese platforms (Red
 </tr>
 </table>
 
-<br>
+The workspace supports content planning for RedNote, Douyin, Bilibili, WeChat, TikTok, Instagram, YouTube and X. Publishing still happens manually on each platform.
 
-## Schedule
-
-<table>
-<tr>
-<td width="62%">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/f-schedule-en-dark.webp">
-    <img src="docs/assets/f-schedule-en-light.webp" width="100%" alt="The schedule calendar with the next post and the list of unscheduled pieces">
-  </picture>
-</td>
-<td valign="top">
-<p><b>One calendar for ideas and posts.</b></p>
-<p>Each day you capture an idea gets a stamp, so you can see your streak. Drag a finished piece from the side list onto a day to schedule it.</p>
-<p>Your next post is always pinned in the top right.</p>
-</td>
-</tr>
-</table>
-
-<br>
-
-## Insights
-
-<table>
-<tr>
-<td valign="top" width="38%">
-<p><b>See what worked, and keep doing it.</b></p>
-<p>Enter numbers by hand, paste a CSV, or import your own account. You'll see daily views, a breakdown by platform and your top pieces in one place.</p>
-<p>Turn a suggestion into a writing rule with one click and it applies to everything you write next. Rules can be exported as a DeepSeek Harness skill.</p>
-</td>
-<td>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/f-insights-en-dark.webp">
-    <img src="docs/assets/f-insights-en-light.webp" width="100%" alt="Insights: a one-line summary, daily views, views by platform, top pieces and suggestions">
-  </picture>
-</td>
-</tr>
-</table>
-
-<br>
-
-## Styles
-
-<table>
-<tr>
-<td width="62%">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/f-style-en-dark.webp">
-    <img src="docs/assets/f-style-en-light.webp" width="100%" alt="Style presets grouped by category, and the content board">
-  </picture>
-</td>
-<td valign="top">
-<p><b>Pick a voice.</b></p>
-<p>Fifteen creator presets in eight categories: tech, travel and food, lifestyle, opinion, tutorials, reviews, stories and news. Pick one and start writing.</p>
-<p><b>Or use your own.</b></p>
-<p>Import your account or paste a few of your posts, and Media Workbench learns your style into a card you can edit.</p>
-<p>The content board shows where every piece stands: idea, outline, draft, ready or published.</p>
-</td>
-</tr>
-</table>
-
-<br>
-
-<a id="get-started"></a>
 ## Get started
 
-Requires DeepSeek Harness `0.2.1-rc.5` or later in the `0.2.x` line. Tested on `0.2.2-rc.1`, desktop and web.
+Requires DeepSeek Harness `0.2.1-rc.5` or later in the `0.2.x` line.
 
-**1. Install.** In the DeepSeek Harness desktop app, go to Plugins → Add plugin, enter `media-workbench`, and install.
+**1. Install.** In the DeepSeek Harness desktop app, go to Plugins → Add plugin, enter `media-workbench`, and install it.
 
-You can also install from the command line. Quit the desktop app completely (⌘Q) first and reopen it afterwards. For the web version, restart `dsh web`. If the `dsh` command isn't available in your terminal, choose "Manage dsh command" from the desktop app's menu.
+You can also use the command line. Quit the desktop app completely (⌘Q) before installing and reopen it afterwards. For the web version, restart `dsh web`. If the `dsh` command is not available, enable it from the desktop app menu.
 
 ```bash
 dsh plugin --profile desktop add media-workbench
@@ -162,147 +91,100 @@ dsh plugin --profile desktop add media-workbench
 dsh plugin --profile web add media-workbench
 ```
 
-**2. Update.** When a new version comes out, update it on the Plugins page or run the same command again. To install offline, download `media-workbench-*.tgz` from [Releases](https://github.com/woniuniuniu/dsh-media-desk/releases/latest) and use `"file:$PWD/media-workbench-VERSION.tgz"` in place of the package name.
+**2. Open.** Media Workbench appears in the sidebar. The first launch includes sample data; clear it from the top right when you are ready to use your own content.
 
-**3. Open.** **Media Workbench** appears in the sidebar. On first launch it's filled with sample data so you can explore every page. Click **Clear sample data** in the top right when you're ready to start with your own.
+**3. Update or uninstall.** Run the install command again to update. Replace `add` with `remove` to uninstall.
 
-To uninstall, replace `add` with `remove media-workbench`. Your content stays in the configured local workbench folder, which defaults to `~/.dsh/media-workbench/`.
+```bash
+dsh plugin --profile desktop remove media-workbench
+```
 
-The **Workbench data directory** setting controls where state, settings and imported media are stored. It accepts an absolute local path or a path beginning with `~/`. **Save drafts to** is separate and only controls exported draft files.
+Uninstalling does not delete your content. State, settings and imported media are stored in `~/.dsh/media-workbench/` by default and can be moved in Settings. **Save drafts to** controls the export folder separately.
 
-<br>
+## Models and services
 
-<a id="what-it-costs"></a>
-## What it costs
+The plugin is free and open source. It ships with no API keys and uses the accounts you configure in DeepSeek Harness or in the plugin settings.
 
-The plugin is free and ships with no API keys. Anything that uses a model runs on your own accounts.
-
-| | What it uses | Without it |
+| Feature | Configuration | Without it |
 | --- | --- | --- |
-| **Script** | The model you've set up in DeepSeek Harness | A structural outline only |
-| **Cover, images, storyboard** | Your image API key, or a registered DSH subscription image tool, selected in settings | Script and storyboard text still work, and the cover is made from text |
-| **Account import** (optional) | RedFox, billed according to its API catalog and your account balance | Enter numbers by hand, or paste posts to learn a style |
+| Titles, scripts and storyboard text | Your text model in DeepSeek Harness | A structural outline |
+| Covers, images and storyboard frames | An OpenAI-compatible image API or a registered DSH image tool | Text still works and the cover uses a text-only fallback |
+| Account import and analytics | A RedFox API key (optional) | Enter numbers manually or paste posts to learn a style |
 
-Images work with any service compatible with the OpenAI Images API (`POST {endpoint}/images/generations`). OpenAI, xAI, Volcengine Ark, Zhipu and SiliconFlow come pre-filled, or you can add a custom endpoint. Click **Generate test image** to check that it works. Each draft makes 9 images by default, and you can change that. Your key is stored only in the local `settings.json` (file mode 600). It never goes into your content data and is never sent to the text model.
+Image APIs use `POST {endpoint}/images/generations`. Common providers are pre-filled, and custom endpoints are supported. Image keys stay in the local `settings.json`; they are not written into content data or sent to the text model.
 
-<br>
-
-### Use DSH generation tools
-
-Reuse subscription image generation made available to DSH by a plugin. For example, if a plugin lets you generate images in DSH with a ChatGPT (GPT) subscription, Media Workbench can reuse that capability without a separate image API key. Subscriptions from other services also require plugin-provided image generation supported by Media Workbench; signing in or connecting a chat model alone does not enable it. Currently supports `dsh-plugin-subscriptions`, which controls service and account selection and fallback.
-
-In Settings, choose **DSH generation tools** as the image source to reuse `image_generate` registered by `dsh-plugin-subscriptions` (including its collision alias). No additional API key is needed. Existing HTTP settings (including size and quality) are preserved; tool size and quality are configured separately, and Image API remains the default. Detection only confirms a compatible registration and a direct-call schema from the default executor, not sign-in or quota; **Generate test image** makes a real request and consumes subscription quota. Name/schema checks do not authenticate plugin identity; enable only trusted tool plugins.
-
-The host must support `tools.executable()`, `tools.selectExecutor().describe()` and standalone `tools.execute()` batches (public contracts verified against DSH 0.2.2-rc.1). Calls go through the host execution pipeline without reading credentials or importing subscription-plugin internals. Only images inside the DSH home `plugins/subscriptions/images/` directory are imported into the existing Media Workbench asset workflow. Discovery currently checks only `dsh_subscriptions_image_generate` and `image_generate`, not arbitrary tool names. Other plugins must also match the parameters, output structure and output directory even when the name matches. Tools registered only in an Agent-private scope are unavailable.
-
-This is an independent background service operation, not a call on behalf of the visible chat session: it does not inherit that session's restrictions, historical toggles or account affinity. Global host tool policies and current subscription-tool preferences still apply. Approval-required calls without a suitable session fail closed. The tool owns provider/account selection and fallback (for example, Grok may be used when ChatGPT is logged out); Media Workbench never falls back to HTTP or adds retries to tool requests.
-
-A pure Code Mode / PTC executor currently rejects direct root image-tool calls and is detected as unavailable. Use a native executor supporting direct calls or HTTP images. Missing tools or unsupported host APIs do not affect existing HTTP functionality.
+When DSH image tools are selected, Media Workbench reuses a compatible registered image tool. If the tool or host version is unavailable, switch back to an HTTP image API.
 
 ## Import your own account
 
-In Styles or Insights, click **Import account** and paste your profile link. Supported: TikTok, Instagram, X, RedNote, Douyin and Bilibili. Your latest public posts and their engagement go into Content and Insights, and Media Workbench learns your style from them. Importing again only refreshes the numbers.
+In Styles or Insights, click **Import account** and paste your profile link. Supported platforms include RedNote, Douyin, Bilibili, TikTok, Instagram and X. Only public content is read; the imported posts, engagement data and learned style stay in the local workspace.
 
-The first time, open Settings and add a [RedFox API Key](https://redfox.hk/apis?source=doc). The key is stored in the local settings file and used only by the Host when calling RedFox. After saving it, open **Import account** and paste your own profile link. Supported platforms are RedNote, Douyin, Bilibili, TikTok, Instagram and X; available fields and pricing depend on RedFox's API and your account balance.
-<br>
+Add a [RedFox API Key](https://redfox.hk/apis?source=doc) in Settings before the first import. Available fields and pricing depend on RedFox and your account balance. Import only accounts you are allowed to use and follow each platform's rules.
 
-<a id="faq"></a>
 ## FAQ
 
 <details>
-<summary><b>Can I import someone else's account?</b></summary>
+<summary><b>Can I use it without an image model?</b></summary>
 <br>
 
-Import only accounts you own. Profile links are sent to RedFox, so check that this fits your platform's terms. Only public data is available: RedNote and Douyin don't show view counts publicly, so Insights uses engagement instead. YouTube, WeChat and WeChat Channels can't be imported yet. You can still schedule posts for them, and paste content or public links to learn a style.
+Yes. Titles, scripts and storyboard text still work, and the cover uses a text-only fallback. Connect an image model to generate covers, images and frames.
 
 </details>
 
 <details>
-<summary><b>Can it post for me?</b></summary>
+<summary><b>Can it publish to platforms for me?</b></summary>
 <br>
 
-No. Platforms don't offer a common publishing API, so copy the script or save the folder and post it yourself. Saved folders go to `~/Documents/Media Workbench/` by default and include the script, storyboard, cover, images and frames.
+No. The workspace handles planning, generation, scheduling and review. Copy the content or save the folder, then publish it yourself.
 
 </details>
 
 <details>
-<summary><b>Where is my data?</b></summary>
+<summary><b>Does my data go to the cloud?</b></summary>
 <br>
 
-Everything stays on your computer in the configured workbench folder, shared by the desktop and web versions. It defaults to `~/.dsh/media-workbench/` and can be changed to an absolute local path in Settings. No cloud and no sign-up.
+State, settings and imported media stay on your computer by default. Only the external model, image or RedFox service you configure receives the data needed for its request.
 
 </details>
 
 <details>
-<summary><b>Does it work without an image model?</b></summary>
+<summary><b>Is this an official DeepSeek product?</b></summary>
 <br>
 
-Yes. The script, title and storyboard text are written as usual, and the cover is made from the cover text. Connect an image model to draw the cover, images and frames too.
+No. Media Workbench is an independently maintained community plugin.
 
 </details>
-
-<details>
-<summary><b>Is this made by DeepSeek?</b></summary>
-<br>
-
-No. It's a community plugin. Scripts are written by the model you've set up in DeepSeek Harness and billed to your own account.
-
-</details>
-
-<br>
-
-## About the author
-
-I'm [蜗牛的科技笔记](https://www.xiaohongshu.com/user/profile/5faedce8000000000101c8a3) (Snail's Tech Notes), a tech creator on RedNote (ID `1097519508`). I use this desk every day. It's built around three problems I kept running into: losing ideas, drafts that took too long, and never checking how posts did. Issues and ideas are welcome on [GitHub](https://github.com/woniuniuniu/dsh-media-desk/issues).
-
-## Thanks
-
-- The [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) team, for an open plugin system to build on.
-- [dsh-Go](https://github.com/ccch1mneyyy/dsh-Go), whose README layout inspired this one.
-
-### Special thanks
-
-To the people who tried it carefully, tracked problems down and sent fixes:
-
-- [secountAiAccount](https://github.com/secountAiAccount), for spotting the unreadable style dropdown in dark mode ([#1](https://github.com/woniuniuniu/dsh-media-desk/issues/1)) and the settings icon that looked like a theme toggle ([#2](https://github.com/woniuniuniu/dsh-media-desk/issues/2))
-- [isxiaokunos](https://github.com/isxiaokunos), for pinning down why image gateways that return relative URLs always failed, were misreported and needlessly retried, with a patch and real measurements ([#3](https://github.com/woniuniuniu/dsh-media-desk/issues/3))
-- [townmi (Harry Tang)](https://github.com/townmi), for finding that opencode-go needs a session header and that the panel misreported the failure as "offline" ([#4](https://github.com/woniuniuniu/dsh-media-desk/issues/4))
-- [zach22-1999](https://github.com/zach22-1999), for fixing the crash when importing X posts whose media field isn't a list ([#6](https://github.com/woniuniuniu/dsh-media-desk/pull/6))
-- [chenxupeng1990-eng](https://github.com/chenxupeng1990-eng), for letting the assistant use any connected model instead of only the DSH default ([#5](https://github.com/woniuniuniu/dsh-media-desk/pull/5))
-- [dsh-agent-sixtyseven](https://github.com/dsh-agent-sixtyseven), for tracking down why account import on Windows kept saying "RedFox API Key was not configured" and fixing both how the command is found and how it's run ([#7](https://github.com/woniuniuniu/dsh-media-desk/issues/7), [#8](https://github.com/woniuniuniu/dsh-media-desk/pull/8))
-- [smallflycar](https://github.com/smallflycar), for letting the desk draw images with a GPT subscription, no separate image API needed ([#9](https://github.com/woniuniuniu/dsh-media-desk/pull/9))
-
-[Issues](https://github.com/woniuniuniu/dsh-media-desk/issues) are always welcome. Every one gets read.
-
-### Contributors
-
-Thanks to everyone who has contributed code:
-
-[![Contributors](https://contrib.rocks/image?repo=woniuniuniu/dsh-media-desk)](https://github.com/woniuniuniu/dsh-media-desk/graphs/contributors)
 
 ## Development
 
 ```bash
-npm install && npm test        # host logic tests
-npm run watch                  # rebuild when client/ changes
-scripts/dev-sandbox.sh         # run the web version in an isolated DSH_HOME
-node scripts/mock-llm.mjs      # mock text and image models, no quota used
-npm pack                       # build the installable tgz
+npm install
+npm test                   # host logic tests
+npm run build              # build client/dist
+npm run watch              # rebuild when client/ changes
+scripts/dev-sandbox.sh     # run the web version in an isolated DSH_HOME
+node scripts/mock-llm.mjs  # use local mock models without quota
+npm pack                   # create the installable tgz
 ```
 
 | Path | Contents |
 | --- | --- |
-| `client/` | UI: idea wall, studio, chat, content, schedule, insights, styles, settings |
-| `src/` | Host routes, drafting pipeline, prompts, image generation, style learning, RedFox import, local storage |
-| `scripts/` | Bundling, sandbox, mock models, sample asset generation |
-| `assets/` | Sample images and videos, all generated by `scripts/gen-assets.py` |
-| `docs/assets/` | The images on this page |
+| `client/` | UI: ideas, studio, chat, content, schedule, insights, styles and settings |
+| `src/` | Host routes, drafting pipeline, prompts, image generation, style learning, account import and local storage |
+| `scripts/` | Bundling, sandbox, mock models and sample asset generation |
+| `assets/` | Sample images and videos |
+| `docs/assets/` | README screenshots |
+| `test/` | Host, i18n, image and import tests |
 
-Restart DeepSeek Harness after changing `src/`.
+Restart DeepSeek Harness after changing `src/`. The Host route prefix is `/media-workbench/`, and local uploads and generated media use `media-workbench/files/...` URIs.
 
-The Host route prefix is `/media-workbench/`, and local uploads and generated media use `media-workbench/files/...` URIs.
+## Feedback and security
 
-**Security:** Every route is authenticated by the host. Model output and fetched content are reduced to known fields with length limits, and only allow-listed operations run. Pasted links can't reach localhost or private networks. RedFox calls use fixed API paths, and account IDs must match fixed formats. Please report vulnerabilities privately through [Security Advisories](https://github.com/woniuniuniu/dsh-media-desk/security/advisories/new).
+- Project: [github.com/xuanzai92/media-workbench](https://github.com/xuanzai92/media-workbench)
+- Issues: [GitHub Issues](https://github.com/xuanzai92/media-workbench/issues)
+- Security: report privately through [Security Advisories](https://github.com/xuanzai92/media-workbench/security/advisories/new)
+
+Every route is authenticated by the host. Model output and fetched content are reduced to the fields the app needs and length-limited, operations are allow-listed, and external links cannot reach localhost or private networks.
 
 <br>
 

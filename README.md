@@ -99,7 +99,14 @@ Media Workbench 是一个装在 DeepSeek Harness 侧栏里的内容创作工作�
 
 要求 DeepSeek Harness `0.2.1-rc.5` 及以上的 `0.2.x` 版本。
 
-**1. 安装。** 这个仓库目前还没有发布到 npm。按你使用的来源选择一种安装方式：
+**1. 安装。** 包名 `media-workbench` 已发布到 npm。按你使用的来源选择一种安装方式：
+
+从 npm 安装（推荐）：
+
+```bash
+dsh plugin --profile desktop add media-workbench
+dsh plugin --profile web add media-workbench
+```
 
 当前目录开发（推荐）：
 
@@ -126,10 +133,10 @@ allowBuilds:
 
 ```bash
 npm pack
-dsh plugin --profile web add "file:/绝对路径/media-workbench-2.6.2.tgz"
+dsh plugin --profile web add "file:/绝对路径/media-workbench-1.0.0.tgz"
 ```
 
-如果以后把包发布到 npm，才可以在桌面版「插件」→「添加插件」中输入 `media-workbench`，或直接执行 `dsh plugin --profile <profile> add media-workbench`。
+桌面版「插件」→「添加插件」也可以直接输入 `media-workbench`。
 
 命令行安装前，桌面版需要完全退出（⌘Q），安装后重新打开；网页版安装后重启 `dsh web`。如果终端里没有 `dsh`，先在桌面版菜单中启用命令行工具。
 

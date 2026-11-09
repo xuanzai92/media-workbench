@@ -79,7 +79,14 @@ The workspace supports content planning for RedNote, Douyin, Bilibili, WeChat, T
 
 Requires DeepSeek Harness `0.2.1-rc.5` or later in the `0.2.x` line.
 
-**1. Install.** This repository is not published to npm yet. Choose the source you want to install from:
+**1. Install.** The package `media-workbench` is published on npm. Choose the source you want to install from:
+
+From npm (recommended):
+
+```bash
+dsh plugin --profile desktop add media-workbench
+dsh plugin --profile web add media-workbench
+```
 
 From the current checkout (recommended for development):
 
@@ -106,10 +113,10 @@ You can also run `npm pack` in the repository and install the resulting tarball.
 
 ```bash
 npm pack
-dsh plugin --profile web add "file:/absolute/path/to/media-workbench-2.6.2.tgz"
+dsh plugin --profile web add "file:/absolute/path/to/media-workbench-1.0.0.tgz"
 ```
 
-After the package is published to npm, the desktop Plugins → Add plugin flow can accept `media-workbench`, and the CLI can use `dsh plugin --profile <profile> add media-workbench`.
+The desktop Plugins → Add plugin flow can also accept `media-workbench`.
 
 Quit the desktop app completely (⌘Q) before installing and reopen it afterwards. For the web version, restart `dsh web`. If the `dsh` command is not available, enable it from the desktop app menu.
 

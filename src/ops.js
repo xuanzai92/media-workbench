@@ -178,7 +178,8 @@ const handlers = {
     return { text: tr(format === 'script' ? '保存《{title}》的脚本' : '保存《{title}》的文章', { title: short(item.title) }), target: item.id, kind: 'item' }
   },
   update_production(state, op) {
-    const item = findById(state.items, op.id)
+    const item = state.items.find(row => row.id === op.id) ?? state.mergedDrafts?.find(row => row.id === op.id)
+    if (!item) throw new Error(tr('找不到对象：{id}', { id: op.id }))
     if (!item.production) throw new Error(tr('这条灵感还没有成稿'))
     if (typeof op.title === 'string') item.production.title = op.title.slice(0, 200)
     if (typeof op.coverText === 'string') item.production.coverText = op.coverText.slice(0, 40)

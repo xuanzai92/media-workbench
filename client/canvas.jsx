@@ -1,7 +1,7 @@
 // 首页：一句话记一个灵感。灵感可以散落在空间里，也可以按时间排成信息流。
 import React from 'react'
 import { Card, openCapture } from './card.jsx'
-import { captureFiles, captureUrl, dispatchOps, openItem, setDesk, useDesk } from './desk.js'
+import { captureFiles, captureUrl, clearItemSelection, dispatchOps, openItem, openItems, setDesk, toggleItemSelection, useDesk } from './desk.js'
 import { plural, t } from './i18n.js'
 import { Icon, IconButton, Segmented } from './ui.jsx'
 import { MiniStamps } from './stamps.jsx'
@@ -119,7 +119,7 @@ function Hero() {
   )
 }
 
-function Node({ item, pos, index, entered, onOpen, tone }) {
+function Node({ item, pos, index, entered, onOpen, tone, selected }) {
   const ref = React.useRef(null)
   React.useLayoutEffect(() => {
     if (entered.current.has(item.id)) return
@@ -134,8 +134,8 @@ function Node({ item, pos, index, entered, onOpen, tone }) {
   }, [entered, index, item.id, pos.x, pos.y])
   const size = cardSize(item)
   return (
-    <div ref={ref} className={`md-node${tone ? ` is-${tone}` : ''}`} data-node={item.id} style={{ left: pos.x, top: pos.y, width: size.w, '--r': `${pos.r ?? 0}deg`, '--d': pos.d ?? 0 }}>
-      <div className="md-pop"><Card item={item} onOpen={onOpen} /></div>
+    <div ref={ref} className={`md-node${tone ? ` is-${tone}` : ''}${selected ? ' is-selected' : ''}`} data-node={item.id} style={{ left: pos.x, top: pos.y, width: size.w, '--r': `${pos.r ?? 0}deg`, '--d': pos.d ?? 0 }}>
+      <div className="md-pop"><Card item={item} onOpen={onOpen} selected={selected} /></div>
     </div>
   )
 }
@@ -156,6 +156,7 @@ function Scatter() {
   const suppressClick = React.useRef(false)
 
   const kind = useDesk(s => s.kindFilter)
+  const selectedIds = useDesk(s => s.selectedIds)
   const related = useDesk(s => s.related)
   const roots = React.useMemo(() => items.filter(isIdea), [items])
   const shown = React.useMemo(() => roots.filter(i => kind === 'all' || displayItem(i).kind === kind), [roots, kind])
@@ -263,8 +264,13 @@ function Scatter() {
 
   const openCard = React.useCallback((item, event) => {
     if (suppressClick.current) return
+    if (event.metaKey || event.ctrlKey) {
+      toggleItemSelection(item.id)
+      return
+    }
+    if (selectedIds.length) clearItemSelection()
     openItem(item.id, originOf(event))
-  }, [])
+  }, [selectedIds.length])
 
   const onPointerDown = (event) => {
     if (event.button !== 0 || event.target.closest('input,textarea,button:not(.md-card),.md-toolrow,.md-ministamps')) return
@@ -398,7 +404,7 @@ function Scatter() {
     >
       <div className="md-world" ref={worldRef}>
         <div className="md-hero-anchor"><Hero /></div>
-        {shown.map((item, index) => <Node key={item.id} item={item} pos={posOf(item)} index={index} entered={entered} onOpen={openCard} tone={toneOf(item)} />)}
+        {shown.map((item, index) => <Node key={item.id} item={item} pos={posOf(item)} index={index} entered={entered} onOpen={openCard} tone={toneOf(item)} selected={selectedIds.includes(item.id)} />)}
       </div>
       <div className="md-toolrow md-toolrow-right" onPointerDown={e => e.stopPropagation()}>
         <IconButton icon="zoomOut" label={t('缩小')} onClick={() => zoomAt(0.8, ...center(), false)} />
@@ -413,6 +419,7 @@ function Scatter() {
 function Feed() {
   const items = useDesk(s => s.state.items)
   const kind = useDesk(s => s.kindFilter)
+  const selectedIds = useDesk(s => s.selectedIds)
   const related = useDesk(s => s.related)
   const rank = id => (related ? related.ids.indexOf(id) : -1)
   const sorted = React.useMemo(() => items
@@ -431,7 +438,14 @@ function Feed() {
       <div className="md-wall">
         {sorted.map((item, index) => (
           <div key={item.id} className={`md-wall-cell${rank(item.id) >= 0 ? ' is-related' : ''}`} style={{ animationDelay: `${Math.min(index * 22, 400)}ms` }}>
-            <Card item={item} onOpen={(row, event) => openItem(row.id, originOf(event))} />
+            <Card item={item} selected={selectedIds.includes(item.id)} onOpen={(row, event) => {
+              if (event.metaKey || event.ctrlKey) {
+                toggleItemSelection(row.id)
+                return
+              }
+              if (selectedIds.length) clearItemSelection()
+              openItem(row.id, originOf(event))
+            }} />
           </div>
         ))}
       </div>
@@ -443,12 +457,25 @@ const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '�
 
 const KIND_OPTIONS = [{ value: 'all', label: '全部' }, { value: 'image', label: '图片' }, { value: 'video', label: '视频' }, { value: 'web', label: '网页' }, { value: 'quote', label: '金句' }, { value: 'note', label: '笔记' }]
 
+function SelectionBar() {
+  const selectedIds = useDesk(s => s.selectedIds)
+  if (!selectedIds.length) return null
+  return (
+    <div className="md-selectionbar" role="toolbar" aria-label={t('批量选择')}>
+      <span className="md-selectionbar-count">{t('已选 {n} 条灵感', { n: selectedIds.length })}</span>
+      <button type="button" className="md-btn is-small" onClick={() => clearItemSelection()}>{t('取消选择')}</button>
+      <button type="button" className="md-btn is-small is-primary" onClick={() => openItems(selectedIds)}>{t('进入详情')}</button>
+    </div>
+  )
+}
+
 export function HomeView() {
   const mode = useDesk(s => s.mode)
   const kind = useDesk(s => s.kindFilter)
   return (
     <div className="md-home">
       {mode === 'feed' ? <Feed /> : <Scatter />}
+      <SelectionBar />
       <div className="md-dockbar" role="toolbar" aria-label={t('灵感视图')}>
         <Segmented
           label={t('展示方式')}

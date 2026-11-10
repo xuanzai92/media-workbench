@@ -33,7 +33,7 @@ function hostOf(url) {
   }
 }
 
-export function Card({ item: raw, onOpen }) {
+export function Card({ item: raw, onOpen, selected = false }) {
   const item = displayItem(raw)
   const inverted = item.pinned
   const running = item.production?.status === 'running'
@@ -43,10 +43,11 @@ export function Card({ item: raw, onOpen }) {
 
   return (
     <article
-      className={`md-card kind-${item.kind} ${inverted ? 'is-inverted' : ''} ${item.status === 'published' ? 'is-published' : ''}`}
+      className={`md-card kind-${item.kind} ${inverted ? 'is-inverted' : ''} ${item.status === 'published' ? 'is-published' : ''} ${selected ? 'is-selected' : ''}`}
       data-card={item.id}
       tabIndex={0}
       role="button"
+      aria-pressed={selected}
       aria-label={t('{kind}：{title}', { kind: t(KIND_LABEL[item.kind]), title: item.title })}
       onPointerEnter={() => setHover(true)}
       onPointerLeave={() => setHover(false)}
@@ -58,6 +59,7 @@ export function Card({ item: raw, onOpen }) {
         }
       }}
     >
+      {selected ? <span className="md-card-select" aria-hidden="true"><Icon name="check" size={12} stroke={2.6} /></span> : null}
       {hasMedia ? (
         <div className="md-card-media" data-media={item.id}>
           <Media item={item} autoPlay={hover} />

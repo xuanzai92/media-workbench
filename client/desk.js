@@ -7,7 +7,7 @@ const BASE = 'media-workbench/'
 
 let snapshot = {
   state: null, model: null, modelOk: null, modelError: null, canUndo: false, error: null,
-  view: 'home', mode: 'scatter', focusId: null, sheetOrigin: null, dockOpen: true, studioDock: false, chatQuote: null, query: '', kindFilter: 'all', related: null,
+  view: 'home', mode: 'scatter', focusId: null, focusIds: [], selectedIds: [], mergedId: null, outputFormat: null, sheetOrigin: null, dockOpen: true, studioDock: false, chatQuote: null, query: '', kindFilter: 'all', related: null,
   live: {}, settings: null, settingsOpen: false, modelPickOpen: false, thinking: false, toast: null, capture: null, dialog: null,
 }
 const listeners = new Set()
@@ -86,20 +86,48 @@ export async function undo() {
 }
 
 export function openItem(id, origin = null) {
-  setDesk({ focusId: id, sheetOrigin: origin })
+  setDesk({ focusId: id, focusIds: [id], selectedIds: [], mergedId: null, outputFormat: null, sheetOrigin: origin })
+}
+
+export function toggleItemSelection(id) {
+  setDesk((current) => {
+    const selected = current.selectedIds.includes(id)
+    return { selectedIds: selected ? current.selectedIds.filter(value => value !== id) : [...current.selectedIds, id] }
+  })
+}
+
+export function clearItemSelection() {
+  setDesk({ selectedIds: [] })
+}
+
+export function openItems(ids, origin = null) {
+  const unique = [...new Set((Array.isArray(ids) ? ids : [ids]).filter(Boolean))]
+  if (!unique.length) return
+  setDesk({ focusId: unique[0], focusIds: unique, selectedIds: [], mergedId: null, outputFormat: null, sheetOrigin: origin })
 }
 
 export function closeItem() {
-  setDesk({ focusId: null, sheetOrigin: null, studioDock: false, chatQuote: null })
+  setDesk({ focusId: null, focusIds: [], selectedIds: [], mergedId: null, sheetOrigin: null, studioDock: false, chatQuote: null })
 }
 
 /** 一键成稿。任务在 Host 里跑，这里只负责启动和看进度。 */
-export async function runProduce(id) {
+export async function runProduce(id, { format = 'video' } = {}) {
   try {
-    const data = await request('produce', { id })
+    const data = await request('produce', { id, format })
     setDesk({ state: data.state })
   } catch (err) {
     report(err)
+  }
+}
+
+export async function runProduceMerge(sourceIds, { format = 'video' } = {}) {
+  try {
+    const data = await request('produce/merge', { sourceIds, format })
+    setDesk({ state: data.state, mergedId: data.id, focusId: data.id, outputFormat: format })
+    return data.id
+  } catch (err) {
+    report(err)
+    return null
   }
 }
 
@@ -109,6 +137,17 @@ export async function cancelProduce(id) {
   } catch (err) {
     report(err)
   }
+}
+
+export async function cancelProduceMany(ids) {
+  const unique = [...new Set((Array.isArray(ids) ? ids : [ids]).filter(Boolean))]
+  await Promise.all(unique.map(async id => {
+    try {
+      await request('produce/cancel', { id })
+    } catch (err) {
+      report(err)
+    }
+  }))
 }
 
 export async function regenAsset(id, target) {
@@ -121,7 +160,10 @@ export async function regenAsset(id, target) {
 }
 
 function mergeProduction(id, production, status) {
-  setDesk(s => ({ state: { ...s.state, items: s.state.items.map(item => (item.id === id ? { ...item, production, ...(status ? { status } : {}) } : item)) } }))
+  setDesk(s => {
+    const patch = item => item.id === id ? { ...item, production, ...(status ? { status } : {}) } : item
+    return { state: { ...s.state, items: s.state.items.map(patch), mergedDrafts: (s.state.mergedDrafts ?? []).map(patch) } }
+  })
 }
 
 /** 轮询进度，返回停止函数。 */
@@ -159,6 +201,15 @@ export async function saveSettings(payload) {
 
 export async function fetchModels() {
   return request('models')
+}
+
+export async function fetchAihot({ tab = 'selected', category = '', q = '', cursor = '', limit = 30 } = {}) {
+  const params = new URLSearchParams({ tab })
+  if (category) params.set('category', category)
+  if (q) params.set('q', q)
+  if (cursor) params.set('cursor', cursor)
+  if (limit) params.set('limit', String(limit))
+  return request(`aihot?${params.toString()}`)
 }
 
 /** 切换助手模型；两个字段都空表示跟随默认。 */
@@ -221,7 +272,7 @@ export async function sendChat(text) {
 
 export async function saveProduced(id) {
   try {
-    const production = snapshot.state.items.find(row => row.id === id)?.production
+    const production = snapshot.state.items.find(row => row.id === id)?.production ?? snapshot.state.mergedDrafts?.find(row => row.id === id)?.production
     // 视频封面在浏览器里合成，一起存进文件夹
     const videoCover = await coverDataUrl({ src: production.cover?.src, text: production.coverText || production.title }).catch(() => undefined)
     const data = await request('produce/save', { id, videoCover })

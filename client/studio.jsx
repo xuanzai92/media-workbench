@@ -2,12 +2,47 @@
 import React from 'react'
 import { ChatPanel } from './chat.jsx'
 import { downloadCover } from './cover.js'
-import { cancelProduce, closeItem, dispatchOps, regenAsset, revealSaved, runProduce, saveProduced, setDesk, toast, useDesk, watchProduction } from './desk.js'
+import { cancelProduce, closeItem, dispatchOps, regenAsset, revealSaved, runProduce, runProduceMerge, saveProduced, setDesk, toast, useDesk, watchProduction } from './desk.js'
 import { plural, t } from './i18n.js'
 import { Icon, IconButton } from './ui.jsx'
 import { SPRING_SNAP, SPRING_SOFT, STYLE_CATEGORIES, fmtDate, fmtWhen, reducedMotion, renderMarkdown, styleIcon, textLength, toLocalInput } from './util.js'
 
 const isBusy = asset => ['pending', 'running'].includes(asset?.status)
+const OUTPUT_FORMATS = [
+  { id: 'image_text', label: '图文', hint: '文章 + 图片' },
+  { id: 'article', label: '文章', hint: '只要文字' },
+  { id: 'video', label: '视频脚本', hint: '文章 + 封面 + 分镜' },
+]
+
+function OutputFormatPicker({ value, onChange, disabled = false }) {
+  return (
+    <div className="md-format-pick" role="group" aria-label={t('输出形式')}>
+      <span>{t('输出形式')}</span>
+      <div className="md-format-options">
+        {OUTPUT_FORMATS.map(option => (
+          <button type="button" key={option.id} className={value === option.id ? 'is-on' : ''} aria-pressed={value === option.id} disabled={disabled} onClick={() => onChange(option.id)}>
+            <b>{t(option.label)}</b><small>{t(option.hint)}</small>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function StylePicker({ disabled = false }) {
+  const styles = useDesk(s => s.state.styles ?? [])
+  const activeId = useDesk(s => s.state.activeStyleId)
+  return (
+    <label className="md-style-pick">
+      <span>{t('风格')}</span>
+      <select aria-label={t('风格')} value={activeId ?? ''} disabled={disabled} onChange={e => dispatchOps([{ op: 'set_style', id: e.target.value || null }], { label: t('切换风格'), silent: true })}>
+        <option value="">{t('默认')}</option>
+        {styles.some(style => !style.preset) ? <optgroup label={t('我的风格')}>{styles.filter(style => !style.preset).map(style => <option key={style.id} value={style.id}>{styleIcon(style)} {style.name}</option>)}</optgroup> : null}
+        {STYLE_CATEGORIES.map(name => <optgroup key={name} label={t(name)}>{styles.filter(style => style.preset && style.category === name).map(style => <option key={style.id} value={style.id}>{styleIcon(style)} {style.name}</option>)}</optgroup>)}
+      </select>
+    </label>
+  )
+}
 
 function unescapeJson(text) {
   try {
@@ -85,27 +120,123 @@ function ProgressCard({ production, live, settings }) {
 function IdeaCard({ item, live, settings }) {
   const production = item.production
   const running = production?.status === 'running'
-  const styles = useDesk(s => s.state.styles ?? [])
-  const activeId = useDesk(s => s.state.activeStyleId)
+  const selectedFormat = useDesk(s => s.outputFormat)
+  const format = selectedFormat ?? production?.format ?? 'video'
+  const canStart = !production || !['running', 'done'].includes(production.status) || (production.status === 'done' && selectedFormat && selectedFormat !== production.format)
   return (
     <div className="md-idea-card">
       <span className="md-idea-label">{t('灵感')} · {fmtDate(item.createdAt)}</span>
       <AutoText className="md-idea-text" label={t('灵感')} value={item.title} disabled={running} onCommit={title => dispatchOps([{ op: 'update_item', id: item.id, title }], { label: t('修改灵感'), silent: true })} />
       {!running ? (
-        <label className="md-style-pick">
-          <span>{t('风格')}</span>
-          <select aria-label={t('风格')} value={activeId ?? ''} onChange={e => dispatchOps([{ op: 'set_style', id: e.target.value || null }], { label: t('切换风格'), silent: true })}>
-            <option value="">{t('默认')}</option>
-            {styles.some(style => !style.preset) ? <optgroup label={t('我的风格')}>{styles.filter(style => !style.preset).map(style => <option key={style.id} value={style.id}>{styleIcon(style)} {style.name}</option>)}</optgroup> : null}
-            {STYLE_CATEGORIES.map(name => <optgroup key={name} label={t(name)}>{styles.filter(style => style.preset && style.category === name).map(style => <option key={style.id} value={style.id}>{styleIcon(style)} {style.name}</option>)}</optgroup>)}
-          </select>
-        </label>
+        <StylePicker />
       ) : null}
-      {!production || !['running', 'done'].includes(production.status) ? <button type="button" className="md-go" onClick={() => runProduce(item.id)}>{t('一键成稿')}</button> : null}
+      {!running ? <OutputFormatPicker value={format} onChange={next => setDesk({ outputFormat: next })} /> : null}
+      {canStart ? <button type="button" className="md-go" onClick={() => runProduce(item.id, { format })}>{production?.status === 'done' ? t('按此形式重新成稿') : t('确认并成稿')}</button> : null}
       {running ? <ProgressCard production={{ ...production, id: item.id }} live={live} settings={settings} /> : null}
       {production?.status === 'failed' ? <p className="md-idea-hint is-error">{production.error}</p> : null}
       {!running && !settings?.imageReady ? <p className="md-idea-hint">{t('接入生图模型后，封面和分镜也会画好。')}<button type="button" onClick={() => setDesk({ settingsOpen: true })}>{t('去接入')}</button></p> : null}
       {production?.notice ? <p className="md-idea-hint">{production.notice}</p> : null}
+    </div>
+  )
+}
+
+function BatchStudio({ items }) {
+  const format = useDesk(s => s.outputFormat) ?? 'video'
+  const start = () => runProduceMerge(items.map(item => item.id), { format })
+  return (
+    <div className="md-studio md-batch-studio" role="dialog" aria-label={t('批量成稿')}>
+      <div className="md-studio-chat">
+        <div className="md-chat">
+          <header className="md-dock-head">
+            <IconButton icon="chevL" label={t('返回灵感')} onClick={closeItem} />
+            <h2>{t('批量成稿')}</h2>
+          </header>
+          <div className="md-dock-scroll">
+            <div className="md-batch-intro">
+              <strong>{t('已选 {n} 条灵感', { n: items.length })}</strong>
+              <p>{t('AI 会提炼这些灵感的共同主题、事实和观点，合并成一篇最终内容。')}</p>
+            </div>
+            <div className="md-batch-list">
+              {items.map(item => (
+                <div className="md-batch-row" key={item.id}>
+                  <span className="md-dot status-idea" />
+                  <div className="md-batch-row-copy">
+                    <strong>{item.title}</strong>
+                    <small>{item.source || t('灵感')}</small>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <StylePicker />
+            <OutputFormatPicker value={format} onChange={next => setDesk({ outputFormat: next })} />
+            <button type="button" className="md-go" onClick={start}>{t('确认并合并成稿')}</button>
+          </div>
+        </div>
+      </div>
+      <main className="md-batch-preview">
+        <div className="md-batch-preview-head">
+          <span>{t('合并后的最终内容')}</span>
+          <small>{t('先选择风格和输出形式')}</small>
+        </div>
+        <div className="md-batch-preview-grid">
+          {items.map(item => (
+            <div className="md-batch-preview-card" key={item.id}>
+              <span className="md-batch-preview-kind">{t(item.kind === 'note' ? '笔记' : item.kind === 'quote' ? '金句' : item.kind === 'web' ? '网页' : item.kind === 'image' ? '图片' : item.kind === 'video' ? '视频' : '灵感')}</span>
+              <strong>{item.title}</strong>
+              <small>{t('将与其他灵感一起融合')}</small>
+            </div>
+          ))}
+        </div>
+      </main>
+    </div>
+  )
+}
+
+function MergedIdeaCard({ draft, sources }) {
+  const production = draft.production
+  const running = production?.status === 'running'
+  const format = production?.format ?? 'video'
+  return (
+    <div className="md-idea-card md-merged-idea-card">
+      <span className="md-idea-label">{t('合并成稿')} · {t('已选 {n} 条灵感', { n: sources.length })}</span>
+      <strong className="md-merged-title">{production?.title || draft.title}</strong>
+      <div className="md-merged-sources">{sources.map(source => <span key={source.id}>{source.title}</span>)}</div>
+      <StylePicker disabled={running} />
+      <OutputFormatPicker value={format} onChange={() => {}} disabled />
+      {production?.notice ? <p className="md-idea-hint">{production.notice}</p> : null}
+    </div>
+  )
+}
+
+function MergedStudio({ draft, sources, chatOpen }) {
+  const live = useDesk(s => s.live[draft.id])
+  const production = draft.production
+  const running = production?.status === 'running'
+  const item = React.useMemo(() => ({ ...sources[0], id: draft.id, title: production?.title || draft.title, body: sources.map(source => source.body || source.title).join('\n\n'), production, sourceIds: draft.sourceIds }), [draft.id, draft.sourceIds, draft.title, production, sources])
+  React.useEffect(() => {
+    if (running || [production?.cover, ...(production?.images ?? []), ...(production?.shots ?? [])].some(isBusy)) return watchProduction(draft.id)
+    return undefined
+  }, [draft.id, production, running])
+  return (
+    <div className={`md-studio ${chatOpen ? 'chat-open' : ''}`} role="dialog" aria-label={t('合并成稿')}>
+      <div className="md-studio-chat">
+        <ChatPanel
+          itemId={draft.id}
+          head={(
+            <>
+              <IconButton icon="chevL" label={t('返回灵感')} onClick={closeItem} />
+              <h2>{t('合并成稿')}</h2>
+            </>
+          )}
+          top={<MergedIdeaCard draft={draft} sources={sources} />}
+          suggestions={production?.status === 'done' ? DONE_SUGGESTIONS.map(row => t(row)) : []}
+          placeholder={running ? t('正在成稿，马上就好') : t('想怎么改，直接说')}
+          disabled={running}
+          intro={false}
+        />
+      </div>
+      <button type="button" className="md-chat-toggle" aria-label={t('打开对话')} onClick={() => setDesk(s => ({ studioDock: !s.studioDock }))}><Icon name="chat" size={16} /></button>
+      <Sheet key={draft.id} item={item} live={live} formatOverride={production?.format} />
     </div>
   )
 }
@@ -236,7 +367,7 @@ function ArticleBody({ production, text, onView }) {
   )
 }
 
-function ArticleTile({ item, live, open, onToggle, onView, tileRef }) {
+function ArticleTile({ item, live, open, onToggle, onView, tileRef, heading = '脚本' }) {
   const production = item.production
   const running = production?.status === 'running'
   const scroller = React.useRef(null)
@@ -278,7 +409,7 @@ function ArticleTile({ item, live, open, onToggle, onView, tileRef }) {
   return (
     <>
       <header className="md-tile-head">
-        <h2>{t('脚本')}</h2>
+        <h2>{t(heading)}</h2>
         <span className="md-grow" />
         {article ? (
           <>
@@ -306,6 +437,26 @@ function ArticleTile({ item, live, open, onToggle, onView, tileRef }) {
       ) : null}
       {words && streaming ? <span className="md-tile-foot">{t('{n} 字', { n: words, s: plural(words, '', 's') })}</span> : null}
     </>
+  )
+}
+
+function ImageTextTile({ item, onView }) {
+  const images = item.production?.images ?? []
+  return (
+    <section className="md-tile md-image-text-tile">
+      <header className="md-tile-head">
+        <h2>{t('配图')}</h2>
+        <span className="md-tile-meta">{t('{n} 张图', { n: images.length })}</span>
+      </header>
+      <div className="md-image-text-grid">
+        {images.map((image, index) => (
+          <figure key={index}>
+            <Plate asset={image} alt={image.caption || t('配图 {n}', { n: index + 1 })} onOpen={image.src ? () => onView(`image:${index}`) : undefined} mark={String(index + 1).padStart(2, '0')} />
+            {image.caption ? <figcaption>{image.caption}</figcaption> : null}
+          </figure>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -402,7 +553,7 @@ function Viewer({ item, target, onChange, onClose }) {
   )
 }
 
-function Sheet({ item, live }) {
+function Sheet({ item, live, formatOverride }) {
   const settings = useDesk(s => s.settings)
   const [open, setOpen] = React.useState(null)
   const [viewing, setViewing] = React.useState(null)
@@ -411,6 +562,7 @@ function Sheet({ item, live }) {
   const articleRef = React.useRef(null)
   const origin = React.useRef(null)
   const closing = React.useRef(false)
+  const format = item.production?.format ?? formatOverride ?? 'video'
 
   const expand = (name) => {
     const box = bento.current.getBoundingClientRect()
@@ -455,6 +607,18 @@ function Sheet({ item, live }) {
     return () => window.removeEventListener('keydown', onKey, true)
   }, [open, viewing, collapse])
 
+  if (format === 'article' || format === 'image_text') {
+    return (
+      <main className={`md-format-sheet md-format-${format}`}>
+        <section className="md-format-article" ref={el => { articleRef.current = el }}>
+          <ArticleTile item={item} live={live} heading="文章" open={false} onToggle={() => {}} onView={setViewing} tileRef={articleRef} />
+        </section>
+        {format === 'image_text' ? <ImageTextTile item={item} onView={setViewing} /> : null}
+        {viewing ? <Viewer item={item} target={viewing} onChange={setViewing} onClose={() => setViewing(null)} /> : null}
+      </main>
+    )
+  }
+
   const tile = name => ({
     ref: (el) => {
       tiles.current[name] = el
@@ -482,7 +646,15 @@ const DONE_SUGGESTIONS = ['标题再短一点', '语气轻松一点', '开场再
 
 export function Studio() {
   const id = useDesk(s => s.focusId)
-  const item = useDesk(s => s.state?.items.find(i => i.id === s.focusId))
+  const mergedId = useDesk(s => s.mergedId)
+  const storedFocusIds = useDesk(s => s.focusIds)
+  const focusIds = storedFocusIds.length ? storedFocusIds : (id ? [id] : [])
+  const stateItems = useDesk(s => s.state?.items ?? [])
+  const mergedDrafts = useDesk(s => s.state?.mergedDrafts ?? [])
+  const focusedItems = React.useMemo(() => stateItems.filter(item => focusIds.includes(item.id)), [stateItems, focusIds])
+  const mergedDraft = mergedId ? mergedDrafts.find(draft => draft.id === mergedId) : null
+  const mergedSources = React.useMemo(() => mergedDraft ? stateItems.filter(item => mergedDraft.sourceIds.includes(item.id)) : [], [mergedDraft, stateItems])
+  const item = focusedItems.find(i => i.id === id)
   const origin = useDesk(s => s.sheetOrigin)
   const live = useDesk(s => s.live[s.focusId])
   const settings = useDesk(s => s.settings)
@@ -523,7 +695,9 @@ export function Studio() {
   }, [id])
 
   // 打开的这条被删掉或撤销掉时，退回灵感墙，不留空白页
-  React.useEffect(() => { if (id && !item) closeItem() }, [id, item])
+  React.useEffect(() => { if (id && !item && !mergedDraft && !focusedItems.length) closeItem() }, [id, item, mergedDraft, focusedItems.length])
+  if (mergedDraft) return <MergedStudio draft={mergedDraft} sources={mergedSources} chatOpen={chatOpen} />
+  if (id && focusedItems.length > 1) return <BatchStudio items={focusedItems} />
   if (!item) return null
   return (
     <div className={`md-studio ${chatOpen ? 'chat-open' : ''}`} ref={ref} role="dialog" aria-label={t('灵感')}>
@@ -544,7 +718,7 @@ export function Studio() {
         />
       </div>
       <button type="button" className="md-chat-toggle" aria-label={t('打开对话')} onClick={() => setDesk(s => ({ studioDock: !s.studioDock }))}><Icon name="chat" size={16} /></button>
-      <Sheet key={item.id} item={item} live={live} />
+      <Sheet key={item.id} item={item} live={live} formatOverride={item.production?.format} />
     </div>
   )
 }

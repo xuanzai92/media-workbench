@@ -5,6 +5,7 @@ import { cp, mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assistantModelOverride, callModel, chatPrompts, defaultSelection, extractJson, modelInfo, modelStatus, setAssistantModel } from './ai.js'
+import { fetchAihot } from './aihot.js'
 import { defaultExportDir, resolveExportDir, saveProduction } from './export.js'
 import { harvest, harvestText } from './harvest.js'
 import { generateImage } from './images.js'
@@ -13,7 +14,7 @@ import { localIntent } from './intents.js'
 import { computeInsights, exportSkill, proposeRules } from './learn.js'
 import { createRedfoxClient, fetchAccount, importPosts, postsToMaterial, redfoxStatus, resolveAccount, saveCovers } from './redfox.js'
 import { applyOps, newId } from './ops.js'
-import { applyRevision, Producer } from './produce.js'
+import { applyRevision, buildMergedItem, Producer } from './produce.js'
 import { publicSettings, Settings, imageReady } from './settings.js'
 import { normalizeStyle, stylePrompts } from './style.js'
 import { dshHome, Store } from './store.js'
@@ -106,14 +107,18 @@ async function chatTurn(ctx, store, desk, body) {
   const focusId = typeof body.focusId === 'string' ? body.focusId : undefined
   const state = await store.read()
   const snapshot = JSON.parse(JSON.stringify(state))
+  const merged = focusId ? snapshot.mergedDrafts?.find(row => row.id === focusId) : null
+  const promptState = merged
+    ? { ...snapshot, items: [...snapshot.items, { ...buildMergedItem(snapshot, merged.sourceIds, merged.id), production: merged.production }] }
+    : snapshot
   let plan
   let engine = 'local'
   let notice = null
   const wasDown = modelStatus.ok === false
   try {
     const history = snapshot.chat.filter(row => (row.itemId ?? null) === (focusId ?? null))
-    const { system, user } = chatPrompts(snapshot, message, { focusId, history })
-    const editing = snapshot.items.find(row => row.id === focusId)?.production?.status === 'done'
+    const { system, user } = chatPrompts(promptState, message, { focusId, history })
+    const editing = (merged?.production ?? snapshot.items.find(row => row.id === focusId)?.production)?.status === 'done'
     const { text, model } = await callModel(ctx, { system, user, maxTokens: editing ? 8000 : 2000, light: true, signal: AbortSignal.timeout(editing ? 240_000 : 90_000) })
     engine = model
     try {
@@ -125,19 +130,20 @@ async function chatTurn(ctx, store, desk, body) {
     }
   } catch {
     notice = outageNotice(ctx, wasDown, tr('先用本地规则处理'))
-    plan = localIntent(snapshot, message, { focusId })
+    plan = localIntent(promptState, message, { focusId })
   }
   const settings = await desk.settings.read()
   const canDraw = desk.producer.ready(settings)
   // 只把真正改了数据的那一步放进撤销；问一句话不占撤销位
   const changed = await store.mutate(tr('对话：{text}', { text: message.slice(0, 18) }), (draft) => {
-    const target = focusId ? draft.items.find(row => row.id === focusId) : null
+    const target = focusId ? (draft.items.find(row => row.id === focusId) ?? draft.mergedDrafts?.find(row => row.id === focusId)) : null
     const production = target?.production?.status === 'done' ? target.production : null
     // 本地规则只会改灵感标题；有成稿时要改的是成稿标题
     const ops = (Array.isArray(plan.ops) ? plan.ops : []).map((op) => {
+      if (merged && op?.op === 'update_item' && op.id === focusId && typeof op.title === 'string') return { op: 'update_production', id: focusId, title: op.title }
       if (production && op?.op === 'update_item' && op.id === focusId && typeof op.title === 'string') return { op: 'update_production', id: focusId, title: op.title }
       return op
-    })
+    }).filter(op => !merged || ['update_production'].includes(op?.op))
     const { receipts, errors } = applyOps(draft, ops)
     let targets = []
     if (production && plan.revise) {
@@ -346,7 +352,7 @@ async function route(ctx, store, desk, req, res) {
       const id = url.searchParams.get('id') ?? ''
       await desk.producer.settle(id)
       const state = await store.read()
-      const item = state.items.find(row => row.id === id)
+      const item = state.items.find(row => row.id === id) ?? state.mergedDrafts?.find(row => row.id === id)
       return json(res, 200, { production: item?.production ?? null, status: item?.status, live: desk.producer.status(id) })
     }
     if (path === 'settings') return json(res, 200, { ...publicSettings(await desk.settings.read(), Boolean(imageTool(ctx))), workspaceDir: store.root, defaultWorkspaceDir: defaultWorkspaceDir(), defaultExportDir: defaultExportDir() })
@@ -366,6 +372,15 @@ async function route(ctx, store, desk, req, res) {
     }
     if (path === 'insights') return json(res, 200, computeInsights(await store.read()))
     if (path === 'redfox/status') return json(res, 200, redfoxStatus(await desk.settings.read()))
+    if (path === 'aihot') {
+      const tab = url.searchParams.get('tab') || 'selected'
+      return json(res, 200, await fetchAihot(tab, {
+        category: url.searchParams.get('category') || '',
+        q: url.searchParams.get('q') || '',
+        cursor: url.searchParams.get('cursor') || '',
+        limit: url.searchParams.get('limit') || '',
+      }))
+    }
     return json(res, 404, { error: tr('接口不存在') })
   }
   if (method !== 'POST') return json(res, 405, { error: tr('不支持的方法') })
@@ -399,8 +414,12 @@ async function route(ctx, store, desk, req, res) {
       return json(res, 200, { state })
     }
     case 'produce': {
-      const started = await desk.producer.start(String(body.id))
+      const started = await desk.producer.start(String(body.id), { format: body.format })
       return json(res, 200, { started, state: await store.read() })
+    }
+    case 'produce/merge': {
+      const id = await desk.producer.startMerge(body.sourceIds, { format: body.format })
+      return json(res, 200, { id, state: await store.read() })
     }
     case 'produce/cancel':
       await desk.producer.cancel(String(body.id))
@@ -411,7 +430,8 @@ async function route(ctx, store, desk, req, res) {
     case 'produce/save': {
       const settings = await desk.settings.read()
       const state = await store.read()
-      const item = state.items.find(row => row.id === body.id)
+      const id = String(body.mergedId || body.id || '')
+      const item = state.items.find(row => row.id === id) ?? state.mergedDrafts?.find(row => row.id === id)
       if (!item?.production?.article) return json(res, 400, { error: tr('还没有可以保存的成稿') })
       await store.read()
       // 视频封面由浏览器合成（画面叠大字），这里只接受 JPEG
@@ -420,7 +440,7 @@ async function route(ctx, store, desk, req, res) {
       if (videoCover && !(videoCover[0] === 0xff && videoCover[1] === 0xd8)) return json(res, 400, { error: tr('封面不是有效的图片') })
       const saved = await saveProduction(item.production, { filesDir: store.filesDir, exportDir: resolveExportDir(settings.exportDir), videoCover })
       const next = await store.mutate('保存成稿', (draft) => {
-        const target = draft.items.find(row => row.id === body.id)
+        const target = draft.items.find(row => row.id === id) ?? draft.mergedDrafts?.find(row => row.id === id)
         if (target?.production) {
           target.production.savedPath = saved.path
           target.production.savedAt = new Date().toISOString()
@@ -432,7 +452,8 @@ async function route(ctx, store, desk, req, res) {
     case 'produce/reveal': {
       // 路径只取自保存记录，不接受请求里传来的路径
       const state = await store.read()
-      const path = state.items.find(row => row.id === body.id)?.production?.savedPath
+      const id = String(body.id || '')
+      const path = (state.items.find(row => row.id === id) ?? state.mergedDrafts?.find(row => row.id === id))?.production?.savedPath
       if (!path) return json(res, 400, { error: tr('还没有保存过') })
       const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open'
       execFile(command, [path], () => {})

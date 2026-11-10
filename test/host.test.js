@@ -409,6 +409,33 @@ test('Producer 文章和图片同时开工，策划案流式露出标题和分�
   }
 })
 
+test('Producer 合并多条灵感只生成一份指定形式的成稿', async () => {
+  const systems = []
+  let generated = 0
+  const callText = async ({ system, user }) => {
+    systems.push(`${system}\n${user}`)
+    return isPlan(system) ? { text: PLAN, model: 'd' } : { text: '# 合并后的标题\n\n## 共同观点\n正文', model: 'd' }
+  }
+  const { dir, store, producer } = await producerFixture({ callText, generate: async () => { generated += 1; return { buffer: PNG, ext: '.png' } } })
+  try {
+    const id = await producer.startMerge(['seed_2', 'seed_3'], { format: 'article' })
+    await waitDone(producer, id)
+    const state = await store.read()
+    const merged = state.mergedDrafts.find(row => row.id === id)
+    assert.deepEqual(merged.sourceIds, ['seed_2', 'seed_3'])
+    assert.equal(merged.production.format, 'article')
+    assert.equal(merged.production.status, 'done')
+    assert.equal(merged.production.cover, null)
+    assert.deepEqual(merged.production.images, [])
+    assert.deepEqual(merged.production.shots, [])
+    assert.equal(generated, 0)
+    assert.ok(systems.some(text => text.includes('多条灵感素材融合') && text.includes('seed_2') && text.includes('seed_3')))
+    assert.equal(state.items.find(row => row.id === 'seed_2').production, undefined)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('Producer 一张图失败不影响其他，可以单独重画', async () => {
   let fail = true
   const generate = async (_, prompt) => {

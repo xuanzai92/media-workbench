@@ -13,6 +13,18 @@ export const EN = {
   不支持的方法: 'Method not allowed',
   拒绝跨站请求: 'Cross-site request refused',
   操作: 'Action',
+  // AIHOT
+  AIHOT: 'AIHOT',
+  '热点分区无效': 'Invalid AIHOT section',
+  '热点分类无效': 'Invalid AIHOT category',
+  '热点搜索词至少需要两个字': 'The AIHOT search must contain at least two characters',
+  'AIHOT 请求太频繁，请稍后再试': 'AIHOT is rate limiting requests. Try again later.',
+  'AIHOT 暂时不可用，请稍后再试': 'AIHOT is temporarily unavailable. Try again later.',
+  'AIHOT 返回了错误（{status}）': 'AIHOT returned an error ({status})',
+  'AIHOT 暂时无法连接，请稍后再试': 'Could not connect to AIHOT. Try again later.',
+  'AIHOT 返回内容太大': 'AIHOT returned too much content',
+  'AIHOT 返回的内容无法读取': 'Could not read the AIHOT response',
+  'AIHOT 返回的数据无效': 'AIHOT returned invalid data',
 
   // 订阅生图工具
   生图来源无效: 'Invalid image source',

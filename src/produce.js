@@ -2,7 +2,7 @@
 // 任务在 Host 里跑，关掉页面也不会中断；每生成一张图就落盘一次。
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { articlePrompts, extractJson, fallbackArticle, fallbackPlan, planPrompts, shortCoverText } from './ai.js'
+import { articlePrompts, extractJson, fallbackArticle, fallbackPlan, normalizeOutputFormat, planPrompts, shortCoverText } from './ai.js'
 import { tr } from './i18n.js'
 import { coverPrompt, figurePrompt, shotPrompt } from './images.js'
 import { newId } from './ops.js'
@@ -20,7 +20,8 @@ function splitTitle(markdown, fallback) {
 }
 
 /** 模型给的规划不可信：只取需要的字段，数量按设置截断。 */
-export function normalizePlan(plan, settings, title) {
+export function normalizePlan(plan, settings, title, format = 'video') {
+  const normalized = normalizeOutputFormat(format)
   const text = (value, max = 400) => (typeof value === 'string' ? value.trim().slice(0, max) : '')
   const images = (Array.isArray(plan?.images) ? plan.images : []).slice(0, settings.imageCount).map(row => ({ caption: text(row?.caption, 60), anchor: text(row?.anchor, 60), prompt: text(row?.prompt, 1200) })).filter(row => row.prompt)
   const shots = (Array.isArray(plan?.shots) ? plan.shots : []).slice(0, settings.shotCount).map((row, index) => ({
@@ -29,13 +30,33 @@ export function normalizePlan(plan, settings, title) {
   })).filter(row => row.prompt || row.visual)
   return {
     title: text(plan?.title, 60) || title,
-    coverText: text(plan?.coverText, 24) || shortCoverText(title),
+    coverText: normalized === 'video' ? text(plan?.coverText, 24) || shortCoverText(title) : '',
     facts: (Array.isArray(plan?.facts) ? plan.facts : []).map(row => text(row, 120)).filter(Boolean).slice(0, 8),
     outline: (Array.isArray(plan?.outline) ? plan.outline : []).map(row => text(row, 40)).filter(Boolean).slice(0, 6),
-    cover: text(plan?.cover, 1200) || title,
+    cover: normalized === 'video' ? text(plan?.cover, 1200) || title : '',
     characters: text(plan?.characters, 400),
-    images,
-    shots,
+    images: normalized === 'article' ? [] : images,
+    shots: normalized === 'video' ? shots : [],
+  }
+}
+
+function findTarget(state, id) {
+  return state.items.find(row => row.id === id) ?? state.mergedDrafts?.find(row => row.id === id) ?? null
+}
+
+export function buildMergedItem(state, sourceIds, id = `merged_${sourceIds.join('_')}`) {
+  const sources = sourceIds.map(sourceId => state.items.find(row => row.id === sourceId)).filter(Boolean)
+  return {
+    id,
+    kind: 'note',
+    title: sources.map(row => row.title).join('｜').slice(0, 120),
+    body: sources.map((row, index) => `【素材 ${index + 1}】\n标题：${row.title}\n补充：${row.body || ''}\n标签：${(row.tags ?? []).join('、')}\n来源：${row.source || ''}`).join('\n\n---\n\n'),
+    tags: [...new Set(sources.flatMap(row => row.tags ?? []))].slice(0, 24),
+    source: tr('合并灵感'),
+    url: null,
+    angleId: null,
+    personaIds: [],
+    sourceIds: [...sourceIds],
   }
 }
 
@@ -168,22 +189,23 @@ export class Producer {
 
   patch(id, mutate) {
     return this.store.mutate('成稿', (state) => {
-      const item = state.items.find(row => row.id === id)
+      const item = findTarget(state, id)
       if (item?.production) mutate(item.production, item)
       return state
     }, { undoable: false })
   }
 
-  async start(id) {
+  async start(id, { format = 'video' } = {}) {
+    const normalized = normalizeOutputFormat(format)
     if (this.jobs.has(id)) return false
     const state = await this.store.read()
     const item = state.items.find(row => row.id === id)
     if (!item) throw Object.assign(new Error(tr('找不到这条灵感')), { status: 404 })
-    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController() }
+    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), sourceIds: [id], format: normalized, merged: false }
     this.jobs.set(id, job)
     await this.store.mutate('开始成稿', (draft) => {
       const target = draft.items.find(row => row.id === id)
-      target.production = { status: 'running', stage: 'brief', startedAt: new Date().toISOString(), title: target.title, article: '', cover: null, images: [], shots: [] }
+      target.production = { status: 'running', stage: 'brief', startedAt: new Date().toISOString(), title: target.title, article: '', format: normalized, sourceIds: [id], cover: null, images: [], shots: [] }
       return draft
     }, { undoable: false })
     // 不等待：浏览器靠轮询拿进度
@@ -191,33 +213,69 @@ export class Producer {
     return true
   }
 
+  async startMerge(sourceIds, { format = 'video' } = {}) {
+    const normalized = normalizeOutputFormat(format)
+    const ids = [...new Set((Array.isArray(sourceIds) ? sourceIds : []).filter(Boolean))].slice(0, 12)
+    const state = await this.store.read()
+    const sources = ids.map(id => state.items.find(row => row.id === id)).filter(Boolean)
+    if (sources.length < 2) throw Object.assign(new Error(tr('至少选择两条灵感才能合并成稿')), { status: 400 })
+    const id = newId('md')
+    const item = buildMergedItem(state, sources.map(row => row.id), id)
+    await this.store.mutate('开始合并成稿', (draft) => {
+      draft.mergedDrafts ??= []
+      draft.mergedDrafts.unshift({ id, sourceIds: item.sourceIds, title: item.title, createdAt: new Date().toISOString(), production: null })
+      return draft
+    }, { undoable: false })
+    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), sourceIds: item.sourceIds, format: normalized, merged: true }
+    this.jobs.set(id, job)
+    await this.store.mutate('开始合并成稿', (draft) => {
+      const target = draft.mergedDrafts.find(row => row.id === id)
+      target.production = { status: 'running', stage: 'brief', startedAt: new Date().toISOString(), title: item.title, article: '', format: normalized, sourceIds: item.sourceIds, cover: null, images: [], shots: [] }
+      return draft
+    }, { undoable: false })
+    this.run(id, job).catch(() => {}).finally(() => this.jobs.delete(id))
+    return id
+  }
+
   async cancel(id) {
     this.jobs.get(id)?.controller.abort()
   }
 
   async run(id, job) {
+    // 保留 start() 放进 jobs Map 的同一个对象。否则用展开复制后，进度更新
+    // 会写到副本，轮询看到的 stage/text 永远停在初始值。
+    job ??= {}
+    job.sourceIds ??= [id]
+    job.format ??= 'video'
+    job.merged ??= false
+    job.controller ??= new AbortController()
+    job.planText ??= ''
+    job.text ??= ''
+    job.stage ??= 'brief'
     const { signal } = job.controller
     try {
       const settings = await this.settings.read()
       const state = await this.store.read()
-      const item = state.items.find(row => row.id === id)
       const snapshot = JSON.parse(JSON.stringify(state))
+      const sourceItems = job.sourceIds.map(sourceId => snapshot.items.find(row => row.id === sourceId)).filter(Boolean)
+      const item = job.merged ? buildMergedItem(snapshot, job.sourceIds, id) : sourceItems[0]
+      if (!item) throw new Error(tr('找不到这条灵感'))
 
       signal.throwIfAborted()
-      const backup = normalizePlan(fallbackPlan(item, '', settings), settings, item.title)
+      const backup = normalizePlan(fallbackPlan(item, '', settings, job.format), settings, item.title, job.format)
 
       let plan
       try {
-        const prompts = planPrompts(snapshot, item, settings)
+        const prompts = planPrompts(snapshot, item, settings, job.format, sourceItems)
         const { text } = await this.callText({ ...prompts, maxTokens: 3000, light: true, signal: AbortSignal.any([signal, AbortSignal.timeout(TEXT_TIMEOUT_MS)]), onText: (delta) => { job.planText += delta } })
-        plan = normalizePlan(extractJson(text), settings, item.title)
+        plan = normalizePlan(extractJson(text), settings, item.title, job.format)
       } catch (err) {
         if (signal.aborted) throw err
         plan = backup
       }
       // 模型漏掉配图或分镜时用模板补上，流水线不能因此少一块
-      if (plan.images.length < settings.imageCount) plan.images = [...plan.images, ...backup.images.slice(plan.images.length)]
-      if (plan.shots.length < settings.shotCount) plan.shots = [...plan.shots, ...backup.shots.slice(plan.shots.length).map((row, i) => ({ ...row, no: plan.shots.length + i + 1 }))]
+      if (job.format !== 'article' && plan.images.length < settings.imageCount) plan.images = [...plan.images, ...backup.images.slice(plan.images.length)]
+      if (job.format === 'video' && plan.shots.length < settings.shotCount) plan.shots = [...plan.shots, ...backup.shots.slice(plan.shots.length).map((row, i) => ({ ...row, no: plan.shots.length + i + 1 }))]
 
       const ready = this.ready(settings)
       const initial = ready ? 'pending' : 'skipped'
@@ -229,7 +287,7 @@ export class Producer {
         production.facts = plan.facts
         production.outline = plan.outline
         production.characters = plan.characters
-        production.cover = { prompt: plan.cover, status: initial }
+        production.cover = job.format === 'video' ? { prompt: plan.cover, status: initial } : null
         production.images = plan.images.map(row => ({ ...row, status: initial }))
         production.shots = plan.shots.map(row => ({ ...row, status: initial }))
         if (!ready) production.needsProvider = true
@@ -241,7 +299,7 @@ export class Producer {
         let notice = null
         let markdown = ''
         try {
-          const prompts = articlePrompts(snapshot, item, settings.voice, plan)
+          const prompts = articlePrompts(snapshot, item, settings.voice, plan, job.format, sourceItems)
           const result = await this.callText({ ...prompts, maxTokens: 6000, signal: AbortSignal.any([signal, AbortSignal.timeout(TEXT_TIMEOUT_MS)]), onText: (delta) => { job.text += delta } })
           markdown = result.text
           engine = result.model
@@ -263,7 +321,7 @@ export class Producer {
 
       const tasks = [writeArticle()]
       if (ready) {
-        const targets = ['cover', ...plan.images.map((_, i) => `image:${i}`), ...plan.shots.map((_, i) => `shot:${i}`)]
+        const targets = [...(job.format === 'video' ? ['cover'] : []), ...plan.images.map((_, i) => `image:${i}`), ...plan.shots.map((_, i) => `shot:${i}`)]
         let next = 0
         const worker = async () => {
           while (next < targets.length && !signal.aborted) {
@@ -278,12 +336,12 @@ export class Producer {
       if (signal.aborted) throw new Error('cancelled')
 
       await this.store.mutate('完成成稿', (draft) => {
-        const target = draft.items.find(row => row.id === id)
+        const target = findTarget(draft, id)
         if (!target?.production) return draft
         target.production.status = 'done'
         target.production.stage = 'done'
         target.production.finishedAt = new Date().toISOString()
-        if (['idea', 'outline'].includes(target.status)) target.status = target.scheduledAt ? 'ready' : 'draft'
+        if (!job.merged && ['idea', 'outline'].includes(target.status)) target.status = target.scheduledAt ? 'ready' : 'draft'
         return draft
       }, { undoable: false })
     } catch (err) {
@@ -354,7 +412,7 @@ export class Producer {
     const key = `${id}:${target}`
     if (this.assets.has(key)) return
     const state = await this.store.read()
-    const production = state.items.find(row => row.id === id)?.production
+    const production = findTarget(state, id)?.production
     if (!production || !assetAt(production, target)) throw Object.assign(new Error(tr('找不到这张图')), { status: 404 })
     this.assets.add(key)
     await this.patch(id, (next) => { assetAt(next, target).status = 'running' })
@@ -365,12 +423,12 @@ export class Producer {
   /** Host 重启后，把上次没做完的成稿都标成中断，卡片不会一直显示「正在成稿」。 */
   async settleAll() {
     const state = await this.store.read()
-    for (const item of state.items) if (item.production?.status === 'running') await this.settle(item.id)
+    for (const item of [...state.items, ...(state.mergedDrafts ?? [])]) if (item.production?.status === 'running') await this.settle(item.id)
   }
 
   async settle(id) {
     const state = await this.store.read()
-    const production = state.items.find(row => row.id === id)?.production
+    const production = findTarget(state, id)?.production
     if (!production || this.jobs.has(id)) return
     const stuck = !this.anyAssetActive(id) && [production.cover, ...production.images ?? [], ...production.shots ?? []].some(asset => asset?.status === 'running')
     if (production.status !== 'running' && !stuck) return

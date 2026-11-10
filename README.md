@@ -133,7 +133,7 @@ allowBuilds:
 
 ```bash
 npm pack
-dsh plugin --profile web add "file:/绝对路径/media-workbench-1.0.0.tgz"
+dsh plugin --profile web add "file:/绝对路径/media-workbench-1.0.1.tgz"
 ```
 
 桌面版「插件」→「添加插件」也可以直接输入 `media-workbench`。

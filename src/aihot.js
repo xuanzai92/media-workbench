@@ -75,6 +75,77 @@ function normalizeTopic(row) {
   }
 }
 
+function storyPublicId(value) {
+  const href = safeUrl(value)
+  if (!href) return null
+  let url
+  try {
+    url = new URL(href)
+  } catch {
+    return null
+  }
+  if (url.hostname !== 'aihot.news') return null
+  const match = /^\/story\/([^/]+)\/?$/.exec(url.pathname)
+  if (!match) return null
+  try {
+    return decodeURIComponent(match[1])
+  } catch {
+    return null
+  }
+}
+
+function normalizeStoryReport(row) {
+  if (!row || typeof row !== 'object') return null
+  const aihot = safeUrl(row.links?.aihot)
+  if (!aihot) return null
+  const original = safeUrl(row.links?.original)
+  return {
+    id: text(row.id, 120),
+    title: text(row.title, 240) || tr('无标题'),
+    summary: text(row.summary, 1800),
+    source: text(row.source?.name, 160) || tr('AIHOT'),
+    firstParty: row.source?.firstParty === true,
+    publishedAt: typeof row.publishedAt === 'string' ? row.publishedAt : null,
+    links: { aihot, ...(original ? { original } : {}) },
+  }
+}
+
+function normalizeStoryNeighbor(row) {
+  if (!row || typeof row !== 'object') return null
+  const aihot = safeUrl(row.links?.aihot)
+  if (!aihot) return null
+  const api = safeUrl(row.links?.api)
+  return {
+    publicId: text(row.publicId, 128),
+    title: text(row.title, 240) || tr('无标题'),
+    relation: text(row.relation, 120),
+    links: { aihot, ...(api ? { api } : {}) },
+  }
+}
+
+function normalizeStory(data) {
+  const row = data?.story
+  if (!row || typeof row !== 'object') throw new Error(tr('AIHOT 返回的事件详情无效'))
+  const aihot = safeUrl(row.links?.aihot)
+  if (!aihot) throw new Error(tr('AIHOT 返回的事件链接无效'))
+  return {
+    publicId: text(row.publicId, 128),
+    title: text(row.title, 240) || tr('无标题'),
+    status: row.status === 'settled' ? 'settled' : 'active',
+    sourceCount: Number.isFinite(row.sourceCount) ? row.sourceCount : null,
+    reportCount: Number.isFinite(row.reportCount) ? row.reportCount : null,
+    firstReportAt: typeof row.firstReportAt === 'string' ? row.firstReportAt : null,
+    latestAt: typeof row.latestAt === 'string' ? row.latestAt : null,
+    latest: text(row.latest, 240),
+    digest: text(row.digest, 12000),
+    digestUpdatedAt: typeof row.digestUpdatedAt === 'string' ? row.digestUpdatedAt : null,
+    links: { aihot },
+    reports: Array.isArray(row.reports) ? row.reports.map(normalizeStoryReport).filter(Boolean) : [],
+    storyline: Array.isArray(row.storyline) ? row.storyline.map(normalizeStoryNeighbor).filter(Boolean) : [],
+    related: Array.isArray(row.related) ? row.related.map(normalizeStoryNeighbor).filter(Boolean) : [],
+  }
+}
+
 function parseSeconds(value) {
   const match = /(?:s-maxage|max-age)\s*=\s*(\d+)/i.exec(value || '')
   return match ? Number(match[1]) : 60
@@ -185,8 +256,48 @@ async function fetchRemote(tab, params, previous) {
   return { ...data, cached: false, stale: false, fetchedAt }
 }
 
+async function fetchStoryRemote(publicId, params = {}) {
+  const key = `story:${publicId}`
+  const now = Date.now()
+  const saved = cache.get(key)
+  if (!params.refresh && saved && saved.expiresAt > now) return { ...saved.data, cached: true, stale: false, fetchedAt: saved.fetchedAt }
+
+  const headers = { accept: 'application/json', 'accept-encoding': 'gzip' }
+  if (saved?.etag) headers['if-none-match'] = saved.etag
+  let response
+  try {
+    response = await fetch(`${BASE_URL}/stories/${encodeURIComponent(publicId)}`, { headers, signal: AbortSignal.timeout(12_000) })
+  } catch {
+    if (saved?.data) return { ...saved.data, cached: true, stale: true, fetchedAt: saved.fetchedAt }
+    throw new Error(tr('AIHOT 暂时无法连接，请稍后再试'))
+  }
+  if (response.status === 304 && saved?.data) {
+    saved.expiresAt = now + Math.max(MIN_CACHE_MS, parseSeconds(response.headers.get('cache-control')) * 1000)
+    return { ...saved.data, cached: true, stale: false, fetchedAt: saved.fetchedAt }
+  }
+  if (!response.ok) {
+    if (saved?.data && [429, 500, 502, 503, 504].includes(response.status)) return { ...saved.data, cached: true, stale: true, fetchedAt: saved.fetchedAt }
+    throw errorForStatus(response.status)
+  }
+  const data = normalizeStory(await readJson(response))
+  const fetchedAt = new Date().toISOString()
+  cache.set(key, {
+    data,
+    etag: response.headers.get('etag') || null,
+    fetchedAt,
+    expiresAt: now + Math.max(MIN_CACHE_MS, parseSeconds(response.headers.get('cache-control')) * 1000),
+  })
+  return { ...data, cached: false, stale: false, fetchedAt }
+}
+
 export async function fetchAihot(tab, params = {}) {
   return fetchRemote(tab, params)
+}
+
+export async function fetchAihotStory(storyUrl, params = {}) {
+  const publicId = storyPublicId(storyUrl)
+  if (!publicId) throw Object.assign(new Error(tr('AIHOT 事件链接无效')), { status: 400 })
+  return fetchStoryRemote(publicId, params)
 }
 
 export function clearAihotCache() {

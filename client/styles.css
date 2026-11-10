@@ -617,6 +617,7 @@ button.md-receipt:hover { transform: translateX(2px); }
 .md-hot-page { padding-top: 78px; }
 .md-hot-head { align-items: center; margin-bottom: 16px; }
 .md-hot-head .md-icon-btn { flex: none; }
+.md-hot-source-badge { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border-radius: 999px; background: var(--hover); color: var(--ink3); font-size: 11.5px; }
 .md-hot-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
 .md-hot-category-filter { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; border-radius: var(--r-md); background: var(--hover); }
 .md-hot-category-filter button { height: 28px; padding: 0 9px; border-radius: var(--r-sm); color: var(--ink3); font-size: 12px; white-space: nowrap; }
@@ -644,6 +645,16 @@ button.md-receipt:hover { transform: translateX(2px); }
 .md-hot-score { color: var(--ink3); font-size: 11.5px; line-height: 18px; }
 .md-root .md-pill.is-saved { color: var(--ink3); background: var(--hover); box-shadow: none; }
 .md-hot-more { align-self: center; margin: 4px 0 18px; }
+.md-hot-timeline { max-width: 940px; padding: 4px 0 18px 8px; }
+.md-hot-timeline-day { position: relative; display: grid; grid-template-columns: 66px minmax(0, 1fr); gap: 10px; }
+.md-hot-timeline-label { padding-top: 19px; color: var(--ink3); font-family: var(--latin-serif); font-size: 12px; line-height: 18px; text-align: right; white-space: nowrap; }
+.md-hot-timeline-items { position: relative; min-width: 0; padding: 0 0 8px 19px; }
+.md-hot-timeline-items::before { content: ''; position: absolute; left: 4px; top: 21px; bottom: 0; width: 1px; background: var(--line-strong); }
+.md-hot-timeline-day:last-of-type .md-hot-timeline-items::before { bottom: 32px; }
+.md-hot-timeline-item { position: relative; padding-bottom: 10px; }
+.md-hot-timeline-item:last-child { padding-bottom: 0; }
+.md-hot-timeline-dot { position: absolute; z-index: 1; left: -19px; top: 20px; width: 9px; height: 9px; border: 2px solid var(--canvas); border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
+.md-hot-timeline .md-hot-card { position: relative; }
 .md-hot-topics { display: flex; flex-direction: column; gap: 1px; max-width: 940px; padding: 6px 0; border-radius: var(--r-xl); background: var(--card); box-shadow: var(--dsw-elevation-soft); overflow: hidden; }
 .md-hot-topic { display: flex; gap: 13px; padding: 15px 18px; border-bottom: .5px solid var(--line); }
 .md-hot-topic:last-child { border-bottom: 0; }
@@ -663,6 +674,43 @@ button.md-receipt:hover { transform: translateX(2px); }
 .md-hot-detail-block p { margin-top: 4px; color: var(--ink3); font-size: 12.5px; line-height: 20px; }
 .md-hot-detail-stats { display: flex; flex-wrap: wrap; gap: 6px 12px; color: var(--ink2); font-size: 12px; line-height: 18px; }
 .md-hot-detail-foot { align-items: center; margin-top: 2px; }
+.md-hot-detail-page { max-width: 940px; padding: 26px 30px 30px; border-radius: var(--r-xl); background: var(--card); box-shadow: var(--dsw-elevation-soft); }
+.md-hot-detail-page h2 { margin-top: 5px; color: var(--ink); font-family: var(--serif); font-size: clamp(24px, 3vw, 36px); line-height: 1.25; font-weight: 400; letter-spacing: -.02em; }
+.md-hot-detail-page .md-hot-detail-summary { max-width: 780px; margin-top: 18px; font-size: 15px; line-height: 26px; }
+.md-hot-detail-page .md-hot-detail-block { max-width: 780px; margin-top: 18px; }
+.md-hot-detail-page .md-hot-detail-stats { margin-top: 16px; }
+.md-hot-detail-page .md-hot-detail-foot { display: flex; flex-wrap: wrap; gap: 6px; max-width: 780px; margin-top: 26px; }
+.md-hot-story-panel { max-width: 940px; padding: 24px 30px 30px; border-radius: var(--r-xl); background: var(--card); box-shadow: var(--dsw-elevation-soft); }
+.md-hot-story-head { display: flex; align-items: flex-start; gap: 18px; justify-content: space-between; padding-bottom: 18px; border-bottom: .5px solid var(--line); }
+.md-hot-story-kicker { color: var(--ink3); font-size: 12px; line-height: 18px; }
+.md-hot-story-head h3 { margin-top: 4px; color: var(--ink); font-family: var(--serif); font-size: 21px; line-height: 28px; font-weight: 400; }
+.md-hot-story-counts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 12px; color: var(--ink3); font-size: 11.5px; line-height: 18px; white-space: nowrap; }
+.md-hot-story-inline-error { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 8px 10px; border-radius: var(--r-md); background: color-mix(in srgb, #c33a33 8%, var(--card)); color: var(--ink2); font-size: 12px; line-height: 18px; }
+.md-hot-story-inline-error span { flex: 1; min-width: 0; }
+.md-hot-story-digest, .md-hot-story-latest { margin-top: 18px; padding: 13px 15px; border-radius: var(--r-md); background: var(--hover); }
+.md-hot-story-digest strong, .md-hot-story-latest strong { display: block; color: var(--ink2); font-size: 12px; line-height: 18px; font-weight: 500; }
+.md-hot-story-digest p, .md-hot-story-latest p { margin-top: 6px; color: var(--ink3); font-size: 13px; line-height: 22px; white-space: pre-line; }
+.md-hot-story-timeline, .md-hot-story-related { margin-top: 24px; }
+.md-hot-story-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.md-hot-story-section-head h3 { color: var(--ink); font-size: 16px; line-height: 24px; font-weight: 500; }
+.md-hot-story-section-head span { color: var(--ink3); font-size: 11.5px; line-height: 18px; }
+.md-hot-story-reports { position: relative; padding-left: 17px; }
+.md-hot-story-reports::before { content: ''; position: absolute; left: 4px; top: 9px; bottom: 16px; width: 1px; background: var(--line-strong); }
+.md-hot-story-report { position: relative; padding-bottom: 12px; }
+.md-hot-story-report:last-child { padding-bottom: 0; }
+.md-hot-story-dot { position: absolute; z-index: 1; left: -17px; top: 13px; width: 9px; height: 9px; border: 2px solid var(--canvas); border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
+.md-hot-story-report-body { padding: 14px 16px 12px; border: .5px solid var(--line); border-radius: var(--r-lg); background: var(--canvas); }
+.md-hot-story-report-head { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; color: var(--ink3); font-size: 11.5px; line-height: 18px; }
+.md-hot-story-report-head em { padding: 0 6px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 12%, var(--card)); color: var(--accent); font-style: normal; }
+.md-hot-story-report h4 { margin-top: 5px; color: var(--ink); font-size: 14px; line-height: 22px; font-weight: 500; }
+.md-hot-story-report p { margin-top: 6px; color: var(--ink2); font-size: 12.5px; line-height: 20px; white-space: pre-line; }
+.md-hot-story-report footer { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.md-hot-story-empty { color: var(--ink3); font-size: 12.5px; line-height: 20px; }
+.md-hot-story-neighbors { display: flex; flex-direction: column; gap: 6px; }
+.md-hot-story-neighbors a { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: var(--r-md); background: var(--hover); color: var(--ink2); font-size: 12.5px; line-height: 20px; }
+.md-hot-story-neighbors a:hover { color: var(--accent); }
+.md-hot-story-neighbors a span { min-width: 0; flex: 1; }
+.md-hot-story-neighbors a small { color: var(--ink3); font-size: 11px; }
 
 /* 对话框与提示 */
 .md-dialog-mask { position: absolute; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; background: var(--dsw-alias-bg-mask-1); animation: md-fade .18s both; }
@@ -928,6 +976,17 @@ button.md-receipt:hover { transform: translateX(2px); }
   .md-hot-card-foot .md-hot-score { width: 100%; }
   .md-hot-card-foot .md-pill { flex: 1; }
   .md-hot-topic { padding: 13px 14px; }
+  .md-hot-timeline { padding-left: 0; }
+  .md-hot-timeline-day { grid-template-columns: 48px minmax(0, 1fr); gap: 6px; }
+  .md-hot-timeline-label { font-size: 11px; }
+  .md-hot-timeline-items { padding-left: 15px; }
+  .md-hot-timeline-items::before { left: 2px; }
+  .md-hot-timeline-dot { left: -17px; }
+  .md-hot-detail-page { padding: 20px 16px 22px; }
+  .md-hot-story-panel { padding: 20px 16px 22px; }
+  .md-hot-story-head { flex-direction: column; gap: 6px; }
+  .md-hot-story-counts { justify-content: flex-start; white-space: normal; }
+  .md-hot-story-report-body { padding: 12px 13px 11px; }
 }
 
 /* 记灵感时拉到眼前的相关灵感 */

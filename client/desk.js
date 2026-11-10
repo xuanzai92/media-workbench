@@ -212,6 +212,12 @@ export async function fetchAihot({ tab = 'selected', category = '', q = '', curs
   return request(`aihot?${params.toString()}`)
 }
 
+export async function fetchAihotStory(url, { refresh = false } = {}) {
+  const params = new URLSearchParams({ url: String(url || '') })
+  if (refresh) params.set('refresh', '1')
+  return request(`aihot-story?${params.toString()}`)
+}
+
 /** 切换助手模型；两个字段都空表示跟随默认。 */
 export async function saveAssistant(assistant) {
   try {

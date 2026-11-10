@@ -5,7 +5,7 @@ import { cp, mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assistantModelOverride, callModel, chatPrompts, defaultSelection, extractJson, modelInfo, modelStatus, setAssistantModel } from './ai.js'
-import { fetchAihot } from './aihot.js'
+import { fetchAihot, fetchAihotStory } from './aihot.js'
 import { defaultExportDir, resolveExportDir, saveProduction } from './export.js'
 import { harvest, harvestText } from './harvest.js'
 import { generateImage } from './images.js'
@@ -379,6 +379,11 @@ async function route(ctx, store, desk, req, res) {
         q: url.searchParams.get('q') || '',
         cursor: url.searchParams.get('cursor') || '',
         limit: url.searchParams.get('limit') || '',
+      }))
+    }
+    if (path === 'aihot-story') {
+      return json(res, 200, await fetchAihotStory(url.searchParams.get('url') || '', {
+        refresh: url.searchParams.get('refresh') === '1',
       }))
     }
     return json(res, 404, { error: tr('接口不存在') })

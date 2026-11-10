@@ -113,7 +113,7 @@ You can also run `npm pack` in the repository and install the resulting tarball.
 
 ```bash
 npm pack
-dsh plugin --profile web add "file:/absolute/path/to/media-workbench-1.0.1.tgz"
+dsh plugin --profile web add "file:/absolute/path/to/media-workbench-1.0.2.tgz"
 ```
 
 The desktop Plugins → Add plugin flow can also accept `media-workbench`.

@@ -6,13 +6,14 @@ import { dirname, extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assistantModelOverride, callModel, chatPrompts, defaultSelection, extractJson, modelInfo, modelStatus, setAssistantModel } from './ai.js'
 import { fetchAihot, fetchAihotStory } from './aihot.js'
-import { defaultExportDir, resolveExportDir, saveProduction } from './export.js'
+import { saveProduction } from './export.js'
 import { harvest, harvestText } from './harvest.js'
 import { generateImage } from './images.js'
 import { generateToolImage, imageTool } from './image-tool.js'
 import { localIntent } from './intents.js'
 import { computeInsights, exportSkill, proposeRules } from './learn.js'
-import { createRedfoxClient, fetchAccount, importPosts, importSearchPosts, postsToMaterial, redfoxStatus, resolveAccount, saveCovers, searchPosts } from './redfox.js'
+import { ensureMarkdownDirs, importMarkdown, removeMarkdown, safeFilePart, syncMarkdown } from './markdown.js'
+import { createRedfoxClient, fetchAccount, fetchRankings, importPosts, importSearchPosts, postsToMaterial, redfoxStatus, resolveAccount, saveCovers, searchPosts } from './redfox.js'
 import { applyOps, newId } from './ops.js'
 import { applyRevision, buildMergedItem, Producer } from './produce.js'
 import { publicSettings, Settings, imageReady } from './settings.js'
@@ -88,6 +89,18 @@ async function sendFile(req, res, file) {
   res.setHeader('content-length', info.size)
   if (req.method === 'HEAD') return res.end()
   return createReadStream(file).pipe(res)
+}
+
+async function attachmentPath(store, prefix, name) {
+  const legacy = prefix === 'files'
+  const preferred = join(legacy ? store.legacyFilesDir : store.attachmentsDir, name)
+  if (legacy) {
+    try {
+      await stat(preferred)
+      return preferred
+    } catch { /* fall through to the migrated attachments directory */ }
+  }
+  return join(store.attachmentsDir, name)
 }
 
 function engineLabel(ctx) {
@@ -292,8 +305,8 @@ async function handleUpload(req, store, res) {
   const buffer = await readBuffer(req, MAX_UPLOAD)
   await store.read()
   const name = `${newId('f')}${ext}`
-  await writeFile(join(store.filesDir, name), buffer)
-  return json(res, 200, { src: `media-workbench/files/${name}`, kind: type.startsWith('video/') ? 'video' : 'image' })
+  await writeFile(join(store.attachmentsDir, name), buffer)
+  return json(res, 200, { src: `media-workbench/attachments/${name}`, kind: type.startsWith('video/') ? 'video' : 'image' })
 }
 
 function createRuntime(ctx, root) {
@@ -303,8 +316,48 @@ function createRuntime(ctx, root) {
     store, settings, callText: options => callModel(ctx, options),
     ready: saved => imageReady(saved, Boolean(imageTool(ctx))),
     generate: (image, prompt, options) => image.source === 'tool' ? generateToolImage(ctx, image, prompt, options) : generateImage(image, prompt, options),
+    onPersist: state => syncMarkdown(store.root, state),
   })
   return { store, settings, producer }
+}
+
+async function projectMarkdown(store, state) {
+  try {
+    await syncMarkdown(store.root, state)
+    return null
+  } catch (err) {
+    return err?.message || String(err)
+  }
+}
+
+async function cleanupMarkdown(store, receipts = []) {
+  const cleanup = (Array.isArray(receipts) ? receipts : [])
+    .map(receipt => receipt?.cleanup)
+    .filter(Boolean)
+  if (!cleanup.length) return null
+  try {
+    await removeMarkdown(store.root, {
+      inspirationIds: cleanup.flatMap(entry => entry.inspirationIds ?? []),
+      contentIds: cleanup.flatMap(entry => entry.contentIds ?? []),
+    })
+    return null
+  } catch (err) {
+    return err?.message || String(err)
+  }
+}
+
+async function importMarkdownState(store) {
+  const current = await store.read()
+  const draft = structuredClone(current)
+  const result = await importMarkdown(store.root, draft)
+  if (result.imported || result.updated) {
+    result.state = await store.mutate('同步 Markdown 灵感', (state) => {
+      state.items = draft.items
+      state.mergedDrafts = draft.mergedDrafts
+      return state
+    }, { undoable: false })
+  } else result.state = current
+  return result
 }
 
 async function copyWorkspaceContents(source, target) {
@@ -327,6 +380,7 @@ async function switchWorkspace(ctx, desk, value) {
   }
   await writeWorkspaceDir(root)
   const next = createRuntime(ctx, root)
+  await ensureMarkdownDirs(root)
   Object.assign(desk, next, { settled: false })
   const saved = await desk.settings.read()
   setAssistantModel(saved.assistant)
@@ -342,19 +396,22 @@ async function route(ctx, store, desk, req, res) {
     if (!/^[\w.-]+$/.test(name)) return json(res, 400, { error: tr('路径无效') })
     return sendFile(req, res, join(ASSETS_DIR, name))
   }
-  if ((method === 'GET' || method === 'HEAD') && path.startsWith('files/')) {
-    const name = path.slice('files/'.length)
+  if ((method === 'GET' || method === 'HEAD') && (path.startsWith('attachments/') || path.startsWith('files/'))) {
+    const prefix = path.startsWith('attachments/') ? 'attachments' : 'files'
+    const name = path.slice(`${prefix}/`.length)
     if (!/^[\w.-]+$/.test(name)) return json(res, 400, { error: tr('路径无效') })
     await store.read()
-    return sendFile(req, res, join(store.filesDir, name))
+    return sendFile(req, res, await attachmentPath(store, prefix, name))
   }
   if (method === 'GET') {
     if (path === 'state') {
       if (!desk.settled) { desk.settled = true; await desk.producer.settleAll().catch(() => {}) }
-      let state = await store.read()
+      const imported = await importMarkdownState(store)
+      let state = imported.state
       // 示例数据跟着界面语言走；用户自己的内容不动
       if (samplesNeedLocale(state, currentLang())) state = await store.mutate('', draft => (localizeSamples(draft, currentLang()), draft), { undoable: false })
-      return json(res, 200, { state, model: engineLabel(ctx), modelOk: modelStatus.ok, modelError: modelStatus.error, canUndo: store.undo.length > 0 })
+      const markdownError = await projectMarkdown(store, state)
+      return json(res, 200, { state, model: engineLabel(ctx), modelOk: modelStatus.ok, modelError: modelStatus.error, canUndo: store.undo.length > 0, markdown: { imported: imported.imported, updated: imported.updated, skipped: imported.skipped, errors: imported.errors }, ...(markdownError ? { markdownError } : {}) })
     }
     if (path === 'production') {
       const id = url.searchParams.get('id') ?? ''
@@ -363,7 +420,7 @@ async function route(ctx, store, desk, req, res) {
       const item = state.items.find(row => row.id === id) ?? state.mergedDrafts?.find(row => row.id === id)
       return json(res, 200, { production: item?.production ?? null, status: item?.status, live: desk.producer.status(id) })
     }
-    if (path === 'settings') return json(res, 200, { ...publicSettings(await desk.settings.read(), Boolean(imageTool(ctx))), workspaceDir: store.root, defaultWorkspaceDir: defaultWorkspaceDir(), defaultExportDir: defaultExportDir() })
+    if (path === 'settings') return json(res, 200, { ...publicSettings(await desk.settings.read(), Boolean(imageTool(ctx))), workspaceDir: store.root, defaultWorkspaceDir: defaultWorkspaceDir() })
     if (path === 'models') {
       // 列出 Harness 里已接的提供方和它们公布的模型，给工作台的助手模型选择器用
       const llm = ctx.get('llm')
@@ -380,6 +437,19 @@ async function route(ctx, store, desk, req, res) {
     }
     if (path === 'insights') return json(res, 200, computeInsights(await store.read()))
     if (path === 'redfox/status') return json(res, 200, redfoxStatus(await desk.settings.read()))
+    if (path === 'redfox/rankings') {
+      const settings = await desk.settings.read()
+      const client = createRedfoxClient(settings.redfox)
+      const result = await fetchRankings({
+        platform: url.searchParams.get('platform') || 'xiaohongshu',
+        ranking: url.searchParams.get('ranking') || '',
+        period: url.searchParams.get('period') || 'day',
+        date: url.searchParams.get('date') || '',
+        category: url.searchParams.get('category') || '',
+        gender: url.searchParams.get('gender') || 'all',
+      }, client)
+      return json(res, 200, result)
+    }
     if (path === 'aihot') {
       const tab = url.searchParams.get('tab') || 'selected'
       return json(res, 200, await fetchAihot(tab, {
@@ -405,9 +475,14 @@ async function route(ctx, store, desk, req, res) {
   if (path === 'upload') return handleUpload(req, store, res)
   const body = await readJson(req)
   switch (path) {
+    case 'markdown/sync': {
+      const imported = await importMarkdownState(store)
+      const markdownError = await projectMarkdown(store, imported.state)
+      return json(res, 200, { ...imported, ...(markdownError ? { markdownError } : {}) })
+    }
     case 'workspace': {
       await switchWorkspace(ctx, desk, body.path)
-      return json(res, 200, { ...publicSettings(await desk.settings.read(), Boolean(imageTool(ctx))), workspaceDir: desk.store.root, defaultWorkspaceDir: defaultWorkspaceDir(), defaultExportDir: defaultExportDir() })
+      return json(res, 200, { ...publicSettings(await desk.settings.read(), Boolean(imageTool(ctx))), workspaceDir: desk.store.root, defaultWorkspaceDir: defaultWorkspaceDir() })
     }
     case 'ops': {
       const label = typeof body.label === 'string' ? body.label : tr('操作')
@@ -415,13 +490,22 @@ async function route(ctx, store, desk, req, res) {
         const applied = applyOps(draft, body.ops)
         return { ...applied, state: draft }
       }, { undoable: body.undoable !== false })
-      return json(res, 200, result)
+      const cleanupError = await cleanupMarkdown(store, result.receipts)
+      const markdownError = cleanupError || await projectMarkdown(store, result.state)
+      return json(res, 200, { ...result, ...(markdownError ? { markdownError } : {}) })
     }
     case 'undo': {
       const label = await store.undoLast()
-      return json(res, 200, { label, state: await store.read(), canUndo: store.undo.length > 0 })
+      const state = await store.read()
+      const markdownError = await projectMarkdown(store, state)
+      return json(res, 200, { label, state, canUndo: store.undo.length > 0, ...(markdownError ? { markdownError } : {}) })
     }
-    case 'chat': return json(res, 200, await chatTurn(ctx, store, desk, body))
+    case 'chat': {
+      const result = await chatTurn(ctx, store, desk, body)
+      const cleanupError = await cleanupMarkdown(store, result.answer?.receipts)
+      const markdownError = cleanupError || await projectMarkdown(store, result.state)
+      return json(res, 200, { ...result, ...(markdownError ? { markdownError } : {}) })
+    }
     case 'chat/clear': {
       const state = await store.mutate('清空对话', (draft) => { draft.chat = []; return draft }, { undoable: false })
       return json(res, 200, { state })
@@ -441,7 +525,6 @@ async function route(ctx, store, desk, req, res) {
       await desk.producer.regenerate(String(body.id), body.target)
       return json(res, 200, { state: await store.read() })
     case 'produce/save': {
-      const settings = await desk.settings.read()
       const state = await store.read()
       const id = String(body.mergedId || body.id || '')
       const item = state.items.find(row => row.id === id) ?? state.mergedDrafts?.find(row => row.id === id)
@@ -451,7 +534,8 @@ async function route(ctx, store, desk, req, res) {
       const match = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(body.videoCover ?? '')
       const videoCover = match ? Buffer.from(match[1], 'base64') : null
       if (videoCover && !(videoCover[0] === 0xff && videoCover[1] === 0xd8)) return json(res, 400, { error: tr('封面不是有效的图片') })
-      const saved = await saveProduction(item.production, { filesDir: store.filesDir, exportDir: resolveExportDir(settings.exportDir), videoCover })
+      const contentDir = join(store.root, '内容', safeFilePart(id, 'content'))
+      const saved = await saveProduction(item.production, { filesDir: store.filesDir, targetDir: contentDir, videoCover })
       const next = await store.mutate('保存成稿', (draft) => {
         const target = draft.items.find(row => row.id === id) ?? draft.mergedDrafts?.find(row => row.id === id)
         if (target?.production) {
@@ -460,7 +544,8 @@ async function route(ctx, store, desk, req, res) {
         }
         return draft
       }, { undoable: false })
-      return json(res, 200, { ...saved, state: next })
+      const markdownError = await projectMarkdown(store, next)
+      return json(res, 200, { ...saved, state: next, ...(markdownError ? { markdownError } : {}) })
     }
     case 'produce/reveal': {
       // 路径只取自保存记录，不接受请求里传来的路径
@@ -473,8 +558,16 @@ async function route(ctx, store, desk, req, res) {
       return json(res, 200, { path })
     }
     case 'style/extract': return json(res, 200, await extractStyle(ctx, store, body))
-    case 'redfox/import': return json(res, 200, await importAccountRoute(ctx, store, desk, body))
-    case 'redfox/search': return json(res, 200, await searchRedfoxRoute(store, desk, body))
+    case 'redfox/import': {
+      const result = await importAccountRoute(ctx, store, desk, body)
+      const markdownError = await projectMarkdown(store, result.state)
+      return json(res, 200, { ...result, ...(markdownError ? { markdownError } : {}) })
+    }
+    case 'redfox/search': {
+      const result = await searchRedfoxRoute(store, desk, body)
+      const markdownError = await projectMarkdown(store, result.state)
+      return json(res, 200, { ...result, ...(markdownError ? { markdownError } : {}) })
+    }
     case 'settings': {
       const before = modelInfo(ctx)
       const updated = await desk.settings.update(body)
@@ -482,7 +575,7 @@ async function route(ctx, store, desk, req, res) {
       const after = modelInfo(ctx)
       // 换了模型，上一个模型的失败状态不再算数
       if (before?.provider !== after?.provider || before?.model !== after?.model) Object.assign(modelStatus, { ok: null, error: null })
-      return json(res, 200, { ...publicSettings(updated, Boolean(imageTool(ctx))), workspaceDir: store.root, defaultWorkspaceDir: defaultWorkspaceDir(), defaultExportDir: defaultExportDir(), assistantEffective: modelInfo(ctx)?.label ?? null })
+      return json(res, 200, { ...publicSettings(updated, Boolean(imageTool(ctx))), workspaceDir: store.root, defaultWorkspaceDir: defaultWorkspaceDir(), assistantEffective: modelInfo(ctx)?.label ?? null })
     }
     case 'settings/test': {
       const settings = await desk.settings.read()
@@ -490,11 +583,19 @@ async function route(ctx, store, desk, req, res) {
       await store.read()
       const { buffer, ext } = await desk.producer.generate(settings.image, 'A single paper boat on calm water, black and white pencil line art sketch, plain white paper background, no text.')
       const name = `${newId('t')}${ext}`
-      await writeFile(join(store.filesDir, name), buffer)
-      return json(res, 200, { src: `media-workbench/files/${name}` })
+      await writeFile(join(store.attachmentsDir, name), buffer)
+      return json(res, 200, { src: `media-workbench/attachments/${name}` })
     }
-    case 'capture-url': return json(res, 200, await addFromUrl(ctx, store, body))
-    case 'account/refresh': return json(res, 200, await refreshAccount(store, body))
+    case 'capture-url': {
+      const result = await addFromUrl(ctx, store, body)
+      const markdownError = await projectMarkdown(store, result.state)
+      return json(res, 200, { ...result, ...(markdownError ? { markdownError } : {}) })
+    }
+    case 'account/refresh': {
+      const result = await refreshAccount(store, body)
+      const markdownError = await projectMarkdown(store, result.state)
+      return json(res, 200, { ...result, ...(markdownError ? { markdownError } : {}) })
+    }
     case 'skills/learn': {
       const proposals = proposeRules(await store.read())
       if (!proposals.length) return json(res, 200, { added: 0, state: await store.read() })
@@ -541,6 +642,7 @@ export default {
     const desk = { store: null, settings: null, producer: null, settled: false, ready: null }
     desk.ready = (async () => {
       const root = await readWorkspaceDir()
+      await ensureMarkdownDirs(root)
       Object.assign(desk, createRuntime(ctx, root))
       const saved = await desk.settings.read()
       setAssistantModel(saved.assistant)

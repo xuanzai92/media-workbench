@@ -127,6 +127,22 @@ test('Store 持久化、撤销，并能感知另一进程的写入', async () =>
   }
 })
 
+test('Store 把旧 files 资源迁移到 attachments 并保留旧文件', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'media-workbench-attachments-'))
+  try {
+    await mkdir(join(dir, 'files'), { recursive: true })
+    await writeFile(join(dir, 'files', 'old.png'), PNG)
+    const store = new Store(dir)
+    await store.read()
+    assert.equal(store.filesDir, join(dir, 'attachments'))
+    assert.equal((await readFile(join(dir, 'attachments', 'old.png'))).equals(PNG), true)
+    assert.equal((await readFile(join(dir, 'files', 'old.png'))).equals(PNG), true)
+    await store.read()
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('extractJson 容忍代码块和前后说明', () => {
   assert.deepEqual(extractJson('好的：\n```json\n{"a":1}\n```\n完成'), { a: 1 })
   assert.deepEqual(extractJson('结果是 [1,2] 。'), [1, 2])
@@ -341,7 +357,7 @@ test('Producer 跑完整条线：文章、规划、全部图片，语气进入�
     assert.match(p.article, /## 第一节/)
     assert.doesNotMatch(p.article, /模型标题/)
     assert.equal(p.cover.status, 'done')
-    assert.match(p.cover.src, /^media-workbench\/files\/g_.+\.png$/)
+    assert.match(p.cover.src, /^media-workbench\/attachments\/g_.+\.png$/)
     assert.equal(p.shots.length, 2)
     assert.ok(p.shots.every(s => s.status === 'done'))
     assert.equal(item.status, 'draft')
@@ -349,7 +365,7 @@ test('Producer 跑完整条线：文章、规划、全部图片，语气进入�
     assert.ok(prompts.some(x => x.includes('black and white') && x.includes('a man')))
     assert.ok(systems.every(x => x.includes('短句，爱用比喻')))
     assert.ok(isPlan(systems[0]))
-    assert.equal((await stat(join(dir, 'files', p.cover.src.split('/').pop()))).size, PNG.length)
+    assert.equal((await stat(join(dir, 'attachments', p.cover.src.split('/').pop()))).size, PNG.length)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -594,6 +610,8 @@ test('saveProduction 写出文章、脚本和素材，标题里的路径字符�
     // 再存一次写回同一个文件夹
     p.savedPath = saved.path
     assert.equal((await saveProduction({ ...p, title: '改名了' }, { filesDir, exportDir: join(dir, 'out') })).path, saved.path)
+    const workspaceTarget = join(dir, '内容', 'md_test')
+    assert.equal((await saveProduction(p, { filesDir, targetDir: workspaceTarget })).path, workspaceTarget)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -736,7 +754,12 @@ test('RedFox：客户端带 API Key、解析错误码并隐藏密钥', async () 
   })
   assert.deepEqual(await client.request('/story/api/test', { value: 1 }), { ok: true })
   assert.equal(calls[0][1].headers.REDFOX_API_KEY, 'secret-redfox')
+  assert.equal(calls[0][1].headers['X-API-KEY'], 'secret-redfox')
   assert.deepEqual(JSON.parse(calls[0][1].body), { value: 1 })
+  await client.request('/story/api/get', { rankDate: '2026-11-09', category: '综合全部' }, { method: 'GET' })
+  assert.match(calls[1][0], /\/story\/api\/get\?rankDate=2026-11-09&category=%E7%BB%BC%E5%90%88%E5%85%A8%E9%83%A8/)
+  assert.equal(calls[1][1].method, 'GET')
+  assert.equal(calls[1][1].body, undefined)
   assert.deepEqual(redfoxStatus({ apiKey: '' }), { state: 'nokey' })
   assert.deepEqual(redfoxStatus({ apiKey: 'secret-redfox' }), { state: 'ready', balance: null })
   assert.deepEqual(redfoxStatus({ redfox: { apiKey: 'secret-redfox' } }), { state: 'ready', balance: null })
@@ -759,6 +782,68 @@ test('RedFox：关键词按平台搜索并可作为外部引用导入', async ()
   const refs = importSearchPosts(draft, { posts })
   assert.equal(refs[0].imported, true)
   assert.equal(refs[0].title, 'AI 搜索结果')
+})
+
+test('RedFox：读取小红书与抖音榜单并统一字段', async () => {
+  const { fetchRankings } = await import('../src/redfox.js')
+  const calls = []
+  const client = { request: async (path, body) => {
+    calls.push({ path, body })
+    if (path.includes('xhsData')) return [{ accountRanking: 1, accountName: '榜一', accountLink: 'https://www.xiaohongshu.com/user/profile/abc', fansCount: '10w', fansGrowth: '1k', likedGrowth: '2k', collectedGrowth: '3k', commentsGrowth: '4k', sharedGrowth: '5k', newNoteCount: 2, category: '数码科技', rankDate: '2026-11-09', rankPeriod: '日' }]
+    return [{ user_nickname: '抖音作者', aweme_desc: '一条爆款', share_url: 'https://www.douyin.com/video/1', add_digg_count: 20, add_comment_count: 3, add_collect_count: 4, add_share_count: 5, category: '科技' }]
+  } }
+  const xhs = await fetchRankings({ platform: 'xiaohongshu', period: 'day', date: '2026-11-09', category: '数码科技' }, client)
+  const douyin = await fetchRankings({ platform: 'douyin', period: 'day', date: '2026-11-09' }, client)
+  assert.equal(xhs.rows[0].name, '榜一')
+  assert.equal(xhs.rows[0].stats.followerGrowth, '1k')
+  assert.equal(douyin.rows[0].title, '一条爆款')
+  assert.equal(douyin.rows[0].stats.likes, 20)
+  assert.deepEqual(calls.map(call => call.path), ['/story/api/xhsData/query', '/story/api/dy/search/getDailyRank'])
+  assert.deepEqual(calls[0].body, { dateType: 1, rankDate: '2026-11-09', type: '数码科技' })
+})
+
+test('RedFox：新社媒榜单使用对应接口并统一作品和账号字段', async () => {
+  const { fetchRankings } = await import('../src/redfox.js')
+  const calls = []
+  const client = { request: async (path, body, options) => {
+    calls.push({ path, body, options })
+    if (path.includes('getXhsCozeSkillData')) return { list: [{ title: '小红书爆款', userName: '笔记作者', photoJumpUrl: 'https://www.xiaohongshu.com/explore/n1', anaAdd: { addLikeCount: 12, addCommentCount: 3, addCollectedCunt: 4, addShareCount: 5 } }] }
+    if (path.includes('getLowPowder')) return [{ title: '黑马笔记', userName: '黑马作者', photoId: 'note-1', useLikeCount: '2w+', useCommentCount: 2, collectedCount: 5, useShareCount: 1 }]
+    if (path.includes('/dy/search/')) return [{ accountName: '抖音作者', title: '抖音作品', workUrl: 'https://www.douyin.com/video/1', likeCount: 20, commentCount: 3, collectCount: 4, shareCount: 5 }]
+    return { list: [{ rankNo: 1, fullName: 'X 作者', profileUrl: 'https://x.com/example', pictureUrl: 'https://cdn.example/avatar.jpg', xFollowerCount: 1000, xScore: 87.5, growthPercentage: '12%', countryName: '中国' }] }
+  } }
+  const date = '2026-11-09'
+  const weekly = await fetchRankings({ platform: 'xiaohongshu', ranking: 'xhs_weekly_viral', date }, client)
+  const daily = await fetchRankings({ platform: 'xiaohongshu', ranking: 'xhs_daily_viral', date }, client)
+  const breakout = await fetchRankings({ platform: 'xiaohongshu', ranking: 'xhs_breakout', date }, client)
+  const hot = await fetchRankings({ platform: 'douyin', ranking: 'douyin_hot_works', date }, client)
+  const rising = await fetchRankings({ platform: 'douyin', ranking: 'douyin_daily_rising', date }, client)
+  const weeklyRising = await fetchRankings({ platform: 'douyin', ranking: 'douyin_weekly_rising', date }, client)
+  const x = await fetchRankings({ platform: 'x', ranking: 'x_hot_accounts', date, gender: 'female' }, client)
+  assert.equal(weekly.rows[0].stats.likes, 12)
+  assert.equal(daily.rows[0].title, '小红书爆款')
+  assert.equal(breakout.rows[0].stats.likes, '2w+')
+  assert.match(breakout.rows[0].url, /xiaohongshu\.com\/explore\/note-1$/)
+  assert.equal(hot.rows[0].stats.likes, 20)
+  assert.equal(rising.rows[0].stats.comments, 3)
+  assert.equal(weeklyRising.rows[0].title, '抖音作品')
+  assert.equal(x.rows[0].name, 'X 作者')
+  assert.equal(x.rows[0].stats.growth, '12%')
+  assert.deepEqual(calls.map(call => call.path), [
+    '/story/api/cozeSkill/getXhsCozeSkillDataSeven',
+    '/story/api/cozeSkill/getXhsCozeSkillDataOne',
+    '/story/api/cozeSkill/getLowPowderExplosiveArticle',
+    '/story/api/dy/search/likesRank',
+    '/story/api/dy/search/getDailyRank',
+    '/story/api/dy/search/getWeeklyRank',
+    '/story/api/x/hotAccount/rankList',
+  ])
+  assert.equal(calls[0].options.method, 'GET')
+  assert.equal(calls[0].body.source, '小红书七日数据爆款文章-GitHub')
+  assert.equal(calls[3].body.endTime, date)
+  assert.equal(calls[4].body.startTime, date)
+  assert.equal(calls[6].body.gender, 'female')
+  assert.equal(calls[6].body.pageNum, 1)
 })
 
 test('RedFox：统一账号资料和作品字段，重复导入只更新数字', async () => {
@@ -807,7 +892,7 @@ test('RedFox：封面存到本地，内网地址、非图片和已有封面都�
   const state = { items: [{ externalId: '抖音:known', media: { src: 'media-workbench/files/x.png' } }] }
   const saved = await saveCovers(posts, '抖音', state, dir, fake)
   assert.deepEqual([...saved.keys()], ['ok'])
-  assert.match(saved.get('ok'), /^media-workbench\/files\/c_[\w]+\.png$/)
+  assert.match(saved.get('ok'), /^media-workbench\/attachments\/c_[\w]+\.png$/)
   assert.equal(requested.some(url => url.includes('127.0.0.1') || url.includes('known')), false)
   assert.equal((await readdir(dir)).length, 1)
   await rm(dir, { recursive: true })
@@ -842,6 +927,21 @@ test('合并成稿支持保存画布位置', () => {
   })
   applyOps(state, [{ op: 'update_item', id: 'md_canvas_position', pos: { x: 240, y: -80, r: 0 } }])
   assert.deepEqual(state.mergedDrafts[0].pos, { x: 240, y: -80, r: 0 })
+})
+
+test('删除成稿保留灵感来源并允许重新生成', () => {
+  const state = seed()
+  state.mergedDrafts.push({
+    id: 'md_delete_production', title: '合并成稿', sourceIds: ['seed_2', 'seed_3'], status: 'ready',
+    scheduledAt: '2026-12-01T12:00:00.000Z', platform: '小红书',
+    production: { status: 'done', format: 'image_text', title: '已完成内容', article: '正文' },
+  })
+  const result = applyOps(state, [{ op: 'delete_production', id: 'md_delete_production' }])
+  assert.equal(result.errors.length, 0)
+  assert.equal(state.mergedDrafts[0].production, undefined)
+  assert.equal(state.mergedDrafts[0].status, 'draft')
+  assert.equal(state.mergedDrafts[0].scheduledAt, null)
+  assert.equal(state.mergedDrafts[0].sourceIds.length, 2)
 })
 
 test('生图被限流（429）时会等一会儿再试，最多三次', async () => {

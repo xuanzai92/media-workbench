@@ -49,8 +49,8 @@ function useContentItems() {
   return React.useMemo(() => {
     // 内容页只展示已经完成成稿的内容；灵感和生成中的任务留在灵感墙/排期页。
     const rows = [
-      ...items.filter(item => item.production?.status === 'done' || item.drafts?.article || item.drafts?.script || ['ready', 'published', 'archived'].includes(item.status)),
-      ...mergedDrafts.filter(draft => draft.production?.status === 'done').map(draft => mergedContentRecord(draft, items)),
+      ...items.filter(item => item.production?.status === 'done' || item.production?.article || item.drafts?.article || item.drafts?.script || ['ready', 'published', 'archived'].includes(item.status)),
+      ...mergedDrafts.filter(draft => draft.production?.status === 'done' || draft.production?.article).map(draft => mergedContentRecord(draft, items)),
     ]
     return rows.filter((item) => {
       if (!query) return true

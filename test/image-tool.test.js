@@ -256,7 +256,7 @@ test('authenticated settings/test and readiness use the same tool backend; HTTP 
   assert.equal(response.body.imageReady, true)
   response = await request('POST', 'settings/test')
   assert.equal(response.status, 200)
-  assert.match(response.body.src, /^media-workbench\/files\//)
+  assert.match(response.body.src, /^media-workbench\/attachments\//)
   assert.equal(generated, 1)
   ctx.get = name => name === 'tools' ? undefined : name === 'connection' ? { requestRejection: () => undefined } : undefined
   response = await request('GET', 'settings')

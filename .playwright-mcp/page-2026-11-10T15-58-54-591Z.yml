@@ -1,0 +1,321 @@
+- generic [ref=e2]:
+  - navigation [ref=e3]:
+    - generic [ref=e4]:
+      - link [ref=e5] [cursor=pointer]:
+        - /url: /
+        - img "logo" [ref=e7]
+      - generic [ref=e8]:
+        - link "API 文档" [ref=e9] [cursor=pointer]:
+          - /url: /apis
+        - link "Skills 广场" [ref=e11] [cursor=pointer]:
+          - /url: /skills
+        - link "MCP 服务" [ref=e12] [cursor=pointer]:
+          - /url: /mcp
+        - link "企业服务" [ref=e13] [cursor=pointer]:
+          - /url: /enterprise
+        - link "价格" [ref=e14] [cursor=pointer]:
+          - /url: /pricing
+        - button [ref=e16] [cursor=pointer]:
+          - text: 在线体验
+          - img "down" [ref=e17]
+        - button [ref=e22] [cursor=pointer]:
+          - text: 开发者
+          - img "down" [ref=e23]
+      - button "切换语言" [ref=e28] [cursor=pointer]
+  - main [ref=e35]:
+    - generic [ref=e36]:
+      - generic [ref=e37]:
+        - generic [ref=e38]:
+          - heading "API 文档" [level=2] [ref=e40]
+          - generic [ref=e41]:
+            - img "code" [ref=e42]
+            - generic [ref=e45]: BASE URL
+            - code [ref=e46]: https://redfox.hk
+          - generic [ref=e47]:
+            - img "search" [ref=e49]
+            - textbox "搜索接口文档标题" [ref=e52]
+            - button [ref=e54] [cursor=pointer]:
+              - img "close-circle" [ref=e55]
+        - paragraph [ref=e59]: 暂无可用的 API 平台
+      - generic [ref=e62]:
+        - generic [ref=e63]:
+          - generic [ref=e64]:
+            - generic [ref=e65]:
+              - generic [ref=e69]:
+                - generic [ref=e70]:
+                  - heading "视频提文案-提交任务" [level=1] [ref=e71]
+                  - generic [ref=e72]: 最低 ¥0.3/次起
+                  - generic [ref=e73]: 即将上线
+                  - generic [ref=e74]: 需配置 API Key
+                - paragraph [ref=e78]: 输入小红书视频链接，返回任务ID
+                - paragraph [ref=e79]: 单价随接口累计调用量阶梯调整
+              - button [ref=e81] [cursor=pointer]:
+                - img "caret-right" [ref=e83]
+                - text: 调试
+            - generic [ref=e86]:
+              - generic [ref=e87]: POST
+              - code [ref=e88]: https://redfox.hk/story/api/parseWork/audioTextExtract/submit/xhs
+              - button "复制" [ref=e89] [cursor=pointer]
+          - region "API 密钥获取与配置" [ref=e90]:
+            - generic [ref=e91]:
+              - img "safety" [ref=e92]
+              - heading "API 密钥获取与配置" [level=2] [ref=e96]
+              - link [ref=e97] [cursor=pointer]:
+                - /url: /dashboard/keys
+                - img "key" [ref=e98]
+                - text: 获取密钥
+            - paragraph [ref=e101]:
+              - text: 调用 API 前，请先在控制台生成 API 密钥并完成配置。在 HTTP 请求头中添加
+              - code [ref=e102]: API Key
+              - text: 字段，密钥用于身份校验与额度计费。
+            - generic [ref=e103]:
+              - heading [level=3] [ref=e104]:
+                - img "alert" [ref=e105]
+                - text: 获取步骤
+              - list [ref=e108]:
+                - listitem [ref=e109]:
+                  - text: 前往
+                  - link "控制台" [ref=e110] [cursor=pointer]:
+                    - /url: /dashboard
+                  - text: 页面，进入 API 密钥管理模块。
+                - listitem [ref=e111]: 若无已生成的密钥，点击生成新密钥，复制并妥善保存密钥。
+                - listitem [ref=e112]:
+                  - text: 在请求头中添加
+                  - code [ref=e113]: REDFOX_API_KEY
+                  - text: 或
+                  - code [ref=e114]: X-API-KEY
+                  - text: 字段并填入密钥后即可调用。
+          - generic [ref=e116]:
+            - generic [ref=e117]:
+              - heading "API说明" [level=2] [ref=e122]
+              - generic [ref=e123]:
+                - button "复制接口文档为 Markdown" [ref=e124] [cursor=pointer]:
+                  - img "copy" [ref=e126]
+                  - text: 复制API文档
+                - button "导出接口文档为 Markdown 文件" [ref=e129] [cursor=pointer]:
+                  - img "file-markdown" [ref=e131]
+                  - text: 导出API文档
+            - paragraph [ref=e134]:
+              - strong [ref=e135]: Method
+              - text: ：
+              - code [ref=e136]: POST
+            - paragraph [ref=e137]:
+              - strong [ref=e138]: Host
+              - text: ：
+              - code [ref=e139]: https://redfox.hk
+            - paragraph [ref=e140]:
+              - strong [ref=e141]: Path
+              - text: ：
+              - code [ref=e142]: /story/api/parseWork/audioTextExtract/submit/xhs
+            - generic [ref=e143]:
+              - heading "请求头" [level=3] [ref=e144]
+              - table [ref=e145]:
+                - rowgroup [ref=e152]:
+                  - row [ref=e153]:
+                    - columnheader "名称" [ref=e154]
+                    - columnheader "类型" [ref=e155]
+                    - columnheader "必填" [ref=e156]
+                    - columnheader "说明" [ref=e157]
+                    - columnheader "示例" [ref=e158]
+                - rowgroup [ref=e159]:
+                  - row [ref=e160]:
+                    - cell "REDFOX_API_KEY" [ref=e161]
+                    - cell "string" [ref=e162]
+                    - cell "是" [ref=e163]
+                    - cell "平台鉴权令牌，每次请求必填" [ref=e164]
+                    - cell "ak_xxxxxx" [ref=e165]
+                  - row [ref=e166]:
+                    - cell "Content-Type" [ref=e167]
+                    - cell "string" [ref=e168]
+                    - cell "是" [ref=e169]
+                    - cell "请求体数据类型" [ref=e170]
+                    - cell "application/json" [ref=e171]
+            - generic [ref=e172]:
+              - heading "请求参数" [level=3] [ref=e173]
+              - table [ref=e174]:
+                - rowgroup [ref=e181]:
+                  - row [ref=e182]:
+                    - columnheader "参数" [ref=e183]
+                    - columnheader "类型" [ref=e184]
+                    - columnheader "必填" [ref=e185]
+                    - columnheader "说明" [ref=e186]
+                    - columnheader "示例" [ref=e187]
+                - rowgroup [ref=e188]:
+                  - row [ref=e189]:
+                    - cell "url" [ref=e190]
+                    - cell "String" [ref=e191]
+                    - cell "是" [ref=e192]
+                    - cell "视频链接" [ref=e193]
+                    - cell "https://www.xiaohongshu.com/explore/6a3c7aa6000000001003e071?xsec_token=AB-U4vc8DJUJoY9w-ebP_DvuxgiSNYmx8n35V4zvPo__M=&xsec_source=pc_feed" [ref=e194]
+            - generic [ref=e195]:
+              - heading "返回值与结构" [level=3] [ref=e196]
+              - paragraph [ref=e197]: "统一包装一般为 `code`、`message`/`msg`、`data`（以实际服务为准）。"
+            - generic [ref=e198]:
+              - heading "响应字段" [level=4] [ref=e199]
+              - table [ref=e200]:
+                - rowgroup [ref=e206]:
+                  - row [ref=e207]:
+                    - columnheader "字段" [ref=e208]
+                    - columnheader "类型" [ref=e209]
+                    - columnheader "说明" [ref=e210]
+                    - columnheader "示例" [ref=e211]
+                - rowgroup [ref=e212]:
+                  - row [ref=e213]:
+                    - cell "code" [ref=e214]
+                    - cell "Integer" [ref=e215]
+                    - cell [ref=e216]
+                    - cell "2000" [ref=e217]
+                  - row [ref=e218]:
+                    - cell "msg" [ref=e219]
+                    - cell "String" [ref=e220]
+                    - cell [ref=e221]
+                    - cell "成功" [ref=e222]
+                  - row [ref=e223]:
+                    - cell "data" [ref=e224]
+                    - cell "Object" [ref=e225]
+                    - cell "任务id" [ref=e226]
+                    - cell [ref=e227]
+                  - row [ref=e228]:
+                    - cell "taskId" [ref=e229]
+                    - cell "String" [ref=e230]
+                    - cell [ref=e231]
+                    - cell "08fbd9bb8b4f41fd80c0a0baf1b26cd1" [ref=e232]
+            - generic [ref=e233]:
+              - heading "请求示例" [level=3] [ref=e234]
+              - code [ref=e236]: "请求参数： { \"url\": \"https://www.xiaohongshu.com/explore/6a3c7aa6000000001003e071?xsec_token=AB-U4vc8DJUJoY9w-ebP_DvuxgiSNYmx8n35V4zvPo__M=&xsec_source=pc_feed\" }"
+            - generic [ref=e237]:
+              - heading "响应示例" [level=3] [ref=e238]
+              - code [ref=e240]: "{ \"code\": 2000, \"data\": { \"taskId\": \"08fbd9bb8b4f41fd80c0a0baf1b26cd1\" }, \"msg\": \"成功\" }"
+          - region "常见状态码说明" [ref=e241]:
+            - heading [level=2] [ref=e242]:
+              - img "warning" [ref=e243]
+              - text: 常见状态码说明
+            - paragraph [ref=e246]:
+              - text: 调用接口时，响应体中的
+              - code [ref=e247]: code
+              - text: 字段对应以下状态码。完整列表请查看
+              - link "API 状态码" [ref=e248] [cursor=pointer]:
+                - /url: /api-codes
+              - text: 说明页。
+            - table [ref=e250]:
+              - rowgroup [ref=e255]:
+                - row [ref=e256]:
+                  - columnheader "状态码" [ref=e257]
+                  - columnheader "说明" [ref=e258]
+                  - columnheader "排查建议" [ref=e259]
+              - rowgroup [ref=e260]:
+                - row [ref=e261]:
+                  - cell [ref=e262]:
+                    - code [ref=e263]: "400"
+                  - cell "请求参数错误" [ref=e264]
+                  - cell "检查请求体、Query 参数是否与文档一致，必填项是否齐全。" [ref=e265]
+                - row [ref=e266]:
+                  - cell [ref=e267]:
+                    - code [ref=e268]: "401"
+                  - cell "鉴权失败" [ref=e269]
+                  - cell "确认请求头已添加 REDFOX_API_KEY 或 X-API-KEY，且密钥有效、未禁用。" [ref=e270]
+                - row [ref=e271]:
+                  - cell [ref=e272]:
+                    - code [ref=e273]: "403"
+                  - cell "无权限访问" [ref=e274]
+                  - cell "当前密钥或账号无权调用该接口，请检查密钥状态与接口权限。" [ref=e275]
+                - row [ref=e276]:
+                  - cell [ref=e277]:
+                    - code [ref=e278]: "500"
+                  - cell "系统内部错误" [ref=e279]
+                  - cell "服务端异常，请稍后重试；持续出现请联系技术支持。" [ref=e280]
+                - row [ref=e281]:
+                  - cell [ref=e282]:
+                    - code [ref=e283]: "503"
+                  - cell "服务暂不可用" [ref=e284]
+                  - cell "服务维护或短暂过载，请间隔一段时间后重试。" [ref=e285]
+                - row [ref=e286]:
+                  - cell [ref=e287]:
+                    - code [ref=e288]: "1001"
+                  - cell "缺少必要参数" [ref=e289]
+                  - cell "对照「请求参数」表，补全必填字段。" [ref=e290]
+                - row [ref=e291]:
+                  - cell [ref=e292]:
+                    - code [ref=e293]: "1002"
+                  - cell "参数格式不正确" [ref=e294]
+                  - cell "检查字段类型与格式（如 URL、日期、枚举值）是否符合说明。" [ref=e295]
+                - row [ref=e296]:
+                  - cell [ref=e297]:
+                    - code [ref=e298]: "1003"
+                  - cell "参数类型错误" [ref=e299]
+                  - cell "确认 JSON 中数字、字符串、布尔等类型与文档定义一致。" [ref=e300]
+                - row [ref=e301]:
+                  - cell [ref=e302]:
+                    - code [ref=e303]: "3103"
+                  - cell "密钥不存在" [ref=e304]
+                  - cell "密钥可能已删除或填写错误，请前往控制台核对并重新复制。" [ref=e305]
+                - row [ref=e306]:
+                  - cell [ref=e307]:
+                    - code [ref=e308]: "3105"
+                  - cell "API Key 已禁用" [ref=e309]
+                  - cell "在控制台启用该密钥，或创建新密钥后替换请求头中的值。" [ref=e310]
+                - row [ref=e311]:
+                  - cell [ref=e312]:
+                    - code [ref=e313]: "3201"
+                  - cell "积分不足" [ref=e314]
+                  - cell "账户余额不足以支付本次调用，请前往控制台充值后再试。" [ref=e315]
+                - row [ref=e316]:
+                  - cell [ref=e317]:
+                    - code [ref=e318]: "3202"
+                  - cell "积分账户不存在" [ref=e319]
+                  - cell "账号积分账户异常，请登录控制台确认账户状态。" [ref=e320]
+                - row [ref=e321]:
+                  - cell [ref=e322]:
+                    - code [ref=e323]: "4004"
+                  - cell "操作过于频繁，请稍后再试" [ref=e324]
+                  - cell "触发频率限制，降低请求频率或增加调用间隔后重试。" [ref=e325]
+        - complementary "API 调用步骤与请求响应示例" [ref=e326]:
+          - generic [ref=e327]:
+            - region "API 调用步骤" [ref=e328]:
+              - generic [ref=e329]:
+                - heading [level=2] [ref=e330]:
+                  - img "ordered-list" [ref=e331]
+                  - text: 调用步骤
+                - button [ref=e335] [cursor=pointer]:
+                  - img "caret-right" [ref=e337]
+                  - text: 调试
+              - list [ref=e340]:
+                - listitem [ref=e341]:
+                  - text: 在请求头配置
+                  - code [ref=e342]: REDFOX_API_KEY
+                  - text: 或
+                  - code [ref=e343]: X-API-KEY
+                - listitem [ref=e344]: 按 API 说明示例构造请求参数或请求体。
+                - listitem [ref=e345]: 发起请求。
+                - listitem [ref=e346]: 解析 JSON 响应中的 code、message 与 data 字段。
+            - generic [ref=e347]:
+              - generic [ref=e348]:
+                - heading "Request（示例代码，仅供参考）" [level=3] [ref=e350]
+                - tablist "请求示例语言" [ref=e351]:
+                  - tab "Shell" [selected] [ref=e352] [cursor=pointer]
+                  - tab "AI提示词" [ref=e353] [cursor=pointer]
+                  - tab "JavaScript" [ref=e354] [cursor=pointer]
+                  - tab "Java" [ref=e355] [cursor=pointer]
+                  - tab "Python" [ref=e356] [cursor=pointer]
+                - tablist "请求示例子类型" [ref=e357]:
+                  - tab "cURL" [selected] [ref=e358] [cursor=pointer]
+                  - tab "cURL-Windows" [ref=e359] [cursor=pointer]
+                  - tab "Httpie" [ref=e360] [cursor=pointer]
+                  - tab "wget" [ref=e361] [cursor=pointer]
+                  - tab "PowerShell" [ref=e362] [cursor=pointer]
+                - generic [ref=e363]:
+                  - generic [ref=e364]:
+                    - generic [ref=e365]: bash
+                    - button [ref=e366] [cursor=pointer]:
+                      - img "copy" [ref=e367]
+                      - text: 复制
+                  - code [ref=e371]: "curl -X POST \"https://redfox.hk/story/api/parseWork/audioTextExtract/submit/xhs\" \\ -H \"REDFOX_API_KEY: your_api_key\" \\ -H \"Content-Type: application/json\" \\ -d '{ \"url\": \"https://www.xiaohongshu.com/explore/6a3c7aa6000000001003e071?xsec_token=AB-U4vc8DJUJoY9w-ebP_DvuxgiSNYmx8n35V4zvPo__M=&xsec_source=pc_feed\" }'"
+              - generic [ref=e372]:
+                - heading "Response（示例代码，仅供参考）" [level=3] [ref=e374]
+                - generic [ref=e375]:
+                  - generic [ref=e376]:
+                    - generic [ref=e377]: json
+                    - button [ref=e378] [cursor=pointer]:
+                      - img "copy" [ref=e379]
+                      - text: 复制
+                  - code [ref=e383]: "{ \"code\": 2000, \"data\": { \"taskId\": \"08fbd9bb8b4f41fd80c0a0baf1b26cd1\" }, \"msg\": \"成功\" }"

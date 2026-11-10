@@ -189,6 +189,7 @@ export const STUDIO = {
   '配图 {n}': 'Image {n}',
   '打开保存的文件夹': 'Show in folder',
   '删除这条灵感': 'Delete this idea',
+  删除成稿: 'Delete draft',
   '删除《{title}》': 'Delete “{title}”',
   '修改文章': 'Edit script',
   '完成': 'Done',

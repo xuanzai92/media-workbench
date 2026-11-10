@@ -1,6 +1,6 @@
 // 持久化：默认在 $DSH_HOME/media-workbench/state.json；Host 启动时可切换到用户指定的本地目录。
 // 两个 Host 进程可能同时运行，所以每次写入前都按 mtime 判断是否需要重读。
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { buildSeed, migrateState } from './seed.js'
@@ -64,7 +64,10 @@ export class Store {
   constructor(root = join(dshHome(), 'media-workbench')) {
     this.root = root
     this.file = join(root, 'state.json')
-    this.filesDir = join(root, 'files')
+    this.attachmentsDir = join(root, 'attachments')
+    // Keep the old property name for callers while all new writes go to attachments/.
+    this.filesDir = this.attachmentsDir
+    this.legacyFilesDir = join(root, 'files')
     this.state = null
     this.mtimeMs = 0
     this.undo = []
@@ -72,7 +75,8 @@ export class Store {
   }
 
   async refresh() {
-    await mkdir(this.filesDir, { recursive: true })
+    await mkdir(this.attachmentsDir, { recursive: true })
+    await this.migrateLegacyFiles()
     let info = null
     try {
       info = await stat(this.file)
@@ -87,6 +91,28 @@ export class Store {
     if (this.state && info.mtimeMs === this.mtimeMs) return
     this.state = migrateState(JSON.parse(await readFile(this.file, 'utf8')))
     this.mtimeMs = info.mtimeMs
+  }
+
+  /** Copy legacy files/ assets into attachments/ without deleting the user's old files. */
+  async migrateLegacyFiles() {
+    let entries
+    try {
+      entries = await readdir(this.legacyFilesDir, { withFileTypes: true })
+    } catch (err) {
+      if (err.code === 'ENOENT') return
+      throw err
+    }
+    await Promise.all(entries.filter(entry => entry.isFile()).map(async entry => {
+      const source = join(this.legacyFilesDir, entry.name)
+      const target = join(this.attachmentsDir, entry.name)
+      try {
+        await cp(source, target, { force: false, errorOnExist: true })
+      } catch (err) {
+        // Node 24 reports fs.cp({ errorOnExist: true }) as ERR_FS_CP_EEXIST;
+        // both codes mean another copy already supplied this attachment.
+        if (err.code !== 'EEXIST' && err.code !== 'ERR_FS_CP_EEXIST') throw err
+      }
+    }))
   }
 
   async persist() {

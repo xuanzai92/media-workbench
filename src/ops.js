@@ -55,9 +55,9 @@ function coerce(type, value) {
       if (value === null) return null
       if (!value || typeof value.src !== 'string') return undefined
       // 媒体只允许插件自己的相对路径或 http(s) 地址
-      const local = /^media-workbench\/(assets|files)\/[\w.-]+$/.test(value.src)
+      const local = /^media-workbench\/(assets|attachments|files)\/[\w.-]+$/.test(value.src)
       if (!local && !isHttpUrl(value.src)) return undefined
-      const poster = typeof value.poster === 'string' && (/^media-workbench\/(assets|files)\/[\w.-]+$/.test(value.poster) || isHttpUrl(value.poster)) ? value.poster : undefined
+      const poster = typeof value.poster === 'string' && (/^media-workbench\/(assets|attachments|files)\/[\w.-]+$/.test(value.poster) || isHttpUrl(value.poster)) ? value.poster : undefined
       return { src: value.src, ...(poster ? { poster } : {}), ...(Number.isFinite(value.w) ? { w: value.w } : {}), ...(Number.isFinite(value.h) ? { h: value.h } : {}) }
     }
     default: return undefined
@@ -157,7 +157,7 @@ const handlers = {
     state.items = state.items.filter(row => row.id !== op.id)
     for (const child of state.items) if (child.parentId === op.id) child.parentId = item.parentId ?? null
     state.metrics = state.metrics.filter(row => row.itemId !== op.id)
-    return { text: tr('删除《{title}》', { title: short(item.title) }) }
+    return { text: tr('删除《{title}》', { title: short(item.title) }), target: item.id, kind: 'item', cleanup: { inspirationIds: [item.id], contentIds: [item.id] } }
   },
   schedule_item(state, op) {
     const item = findContentById(state, op.id)
@@ -192,6 +192,19 @@ const handlers = {
     if (typeof op.coverText === 'string') item.production.coverText = op.coverText.slice(0, 40)
     if (typeof op.article === 'string') item.production.article = op.article.slice(0, 200000)
     return { text: tr('修改《{title}》', { title: short(item.production.title) }), target: item.id, kind: 'item' }
+  },
+  delete_production(state, op) {
+    const isMerged = (state.mergedDrafts ?? []).some(row => row.id === op.id)
+    const item = findContentById(state, op.id)
+    if (!item.production) throw new Error(tr('这条内容还没有成稿'))
+    const title = short(item.production.title || item.title)
+    delete item.production
+    item.scheduledAt = null
+    item.platform = null
+    delete item.publishedAt
+    // 合并稿保留来源关系，单条灵感退回灵感状态，之后都可以重新生成。
+    item.status = isMerged ? 'draft' : item.imported && item.externalId && !item.importedFromMarkdown ? 'published' : 'idea'
+    return { text: tr('删除《{title}》的成稿，可重新生成', { title }), target: item.id, kind: 'item', cleanup: { contentIds: [item.id] } }
   },
   add_person(state, op, now) {
     const person = { id: newId('p'), name: '', role: tr('目标读者'), note: '', traits: [], tone: Math.floor(Math.random() * 6), createdAt: now, ...pick(PERSON_FIELDS, op) }
@@ -327,7 +340,13 @@ export function applyOps(state, ops) {
     }
     try {
       const receipt = handler(state, op, now)
-      if (receipt) receipts.push(receipt)
+      if (receipt) {
+        receipts.push(receipt)
+        if (receipt.kind === 'item' && receipt.target) {
+          const target = state.items.find(row => row.id === receipt.target) ?? state.mergedDrafts?.find(row => row.id === receipt.target)
+          if (target) target.updatedAt = now
+        }
+      }
     } catch (err) {
       errors.push(err.message)
     }

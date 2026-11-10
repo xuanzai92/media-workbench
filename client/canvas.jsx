@@ -1,7 +1,7 @@
 // 首页：一句话记一个灵感。灵感可以散落在空间里，也可以按时间排成信息流。
 import React from 'react'
 import { Card, openCapture } from './card.jsx'
-import { captureFiles, captureUrl, clearItemSelection, dispatchOps, openItem, openItems, setDesk, toggleItemSelection, useDesk } from './desk.js'
+import { captureFiles, captureUrl, clearItemSelection, dispatchOps, getDesk, openItem, openItems, setDesk, toggleItemSelection, useDesk } from './desk.js'
 import { plural, t } from './i18n.js'
 import { Icon, IconButton, Segmented } from './ui.jsx'
 import { MiniStamps } from './stamps.jsx'
@@ -438,6 +438,14 @@ function Scatter() {
         if (!moved) return
         const next = dragPos.current[id]
         setTimeout(() => { suppressClick.current = false }, 0)
+        // 成稿节点可能在拖拽期间因生成完成、删除或刷新而从状态中消失。
+        // 旧的 pointerup 不应再把它当成真实对象提交位置更新。
+        const state = getDesk().state
+        const exists = state?.items?.some(item => item.id === id) || state?.mergedDrafts?.some(item => item.id === id)
+        if (!next || !exists) {
+          delete dragPos.current[id]
+          return
+        }
         await dispatchOps([{ op: 'update_item', id, pos: { x: Math.round(next.x), y: Math.round(next.y), r: next.r } }], { undoable: false, silent: true })
         delete dragPos.current[id]
         force()

@@ -6,6 +6,7 @@ import { ContentView } from './content.jsx'
 import { captureFiles, captureUrl, dispatchOps, loadDesk, setDesk, undo, useDesk } from './desk.js'
 import { InsightsView } from './insights.jsx'
 import { HotView } from './hot.jsx'
+import { RankingsView } from './rankings.jsx'
 import { StyleView } from './style.jsx'
 import { ScheduleView } from './schedule.jsx'
 import { ModelButton, ModelPicker } from './modelpick.jsx'
@@ -20,6 +21,7 @@ const PANEL_ID = 'media-workbench'
 // navKey：同一个中文在别处意思不同（单数的“灵感”“风格”），英文导航另查一条
 const NAV = [
   { id: 'hot', label: '热点', navKey: '热点（导航）' },
+  { id: 'rankings', label: '社媒榜单', navKey: '社媒榜单（导航）' },
   { id: 'home', label: '灵感', navKey: '灵感（导航）' },
   { id: 'content', label: '内容' },
   { id: 'schedule', label: '排期' },
@@ -27,7 +29,7 @@ const NAV = [
   { id: 'style', label: '风格', navKey: '风格（导航）' },
 ]
 
-const VIEWS = { hot: HotView, home: HomeView, content: ContentView, schedule: ScheduleView, insights: InsightsView, style: StyleView }
+const VIEWS = { hot: HotView, rankings: RankingsView, home: HomeView, content: ContentView, schedule: ScheduleView, insights: InsightsView, style: StyleView }
 
 function CaptureDialog() {
   const capture = useDesk(s => s.capture)

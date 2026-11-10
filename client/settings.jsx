@@ -1,6 +1,6 @@
-// 设置：开放接入的生图模型和保存位置。
+// 设置：开放接入的生图模型和工作台目录。
 import React from 'react'
-import { saveSettings, saveWorkspace, setDesk, testImage, useDesk } from './desk.js'
+import { saveSettings, saveWorkspace, setDesk, syncMarkdownFiles, testImage, useDesk } from './desk.js'
 import { t, useLang } from './i18n.js'
 import { Dialog, Icon } from './ui.jsx'
 
@@ -32,7 +32,7 @@ export function SettingsDialog() {
   React.useEffect(() => {
     if (!open || !settings) return
     const { image } = settings
-    setForm({ source: image.source ?? 'http', language: settings.language ?? 'auto', baseUrl: image.baseUrl, model: image.model, apiKey: '', size: image.size, quality: image.quality, toolSize: image.toolSize ?? '1536x1024', toolQuality: image.toolQuality ?? '', extra: image.extra, workspaceDir: settings.workspaceDir ?? '', exportDir: settings.exportDir ?? '', redfoxApiKey: '', imageCount: settings.imageCount, shotCount: settings.shotCount })
+    setForm({ source: image.source ?? 'http', language: settings.language ?? 'auto', baseUrl: image.baseUrl, model: image.model, apiKey: '', size: image.size, quality: image.quality, toolSize: image.toolSize ?? '1536x1024', toolQuality: image.toolQuality ?? '', extra: image.extra, workspaceDir: settings.workspaceDir ?? '', redfoxApiKey: '', imageCount: settings.imageCount, shotCount: settings.shotCount })
     setSample(null)
   }, [open, settings])
   if (!open || !form) return null
@@ -41,7 +41,7 @@ export function SettingsDialog() {
   const payload = () => ({
     language: form.language,
     image: { source: form.source, baseUrl: form.baseUrl, model: form.model, apiKey: form.apiKey, size: form.size, quality: form.quality, toolSize: form.toolSize, toolQuality: form.toolQuality, extra: form.extra },
-    exportDir: form.exportDir, redfox: { apiKey: form.redfoxApiKey }, imageCount: Number(form.imageCount), shotCount: Number(form.shotCount),
+    redfox: { apiKey: form.redfoxApiKey }, imageCount: Number(form.imageCount), shotCount: Number(form.shotCount),
   })
   const activePreset = PRESETS.find(p => p.baseUrl && p.baseUrl === form.baseUrl)?.id ?? (form.baseUrl ? 'custom' : null)
   return (
@@ -61,17 +61,18 @@ export function SettingsDialog() {
             ))}
           </div>
         </div>
-        <label className="md-field">
+        <div className="md-field">
           <span>{t('工作台数据目录')}</span>
           <input value={form.workspaceDir} onChange={e => set('workspaceDir', e.target.value)} placeholder={settings.defaultWorkspaceDir} />
-          <small>{t('状态、设置和导入的媒体会保存到这个路径。支持绝对路径和 ~/ 开头的路径；这是 DeepSeek Harness 所在电脑上的本地目录。')}</small>
-        </label>
-        <label className="md-field">
-          <span>{t('成稿保存到')}</span>
-          <input value={form.exportDir} onChange={e => set('exportDir', e.target.value)} placeholder={settings.defaultExportDir} />
-          <small>{t('只影响导出的成稿文件，不会改变工作台数据目录。')}</small>
-        </label>
-
+          <small>{t('状态、设置和导入的媒体会保存到这个路径；首次使用会自动创建“灵感”和“内容”子文件夹。支持绝对路径和 ~/ 开头的路径；这是 DeepSeek Harness 所在电脑上的本地目录。')}</small>
+          <button type="button" className="md-btn" onClick={async () => {
+            const path = form.workspaceDir.trim()
+            if (path && path !== settings.workspaceDir && !(await saveWorkspace(path))) return
+            await syncMarkdownFiles()
+          }}>{t('同步本地 Markdown')}</button>
+          <small>{t('采集灵感和生成内容会自动保存；这个按钮用于把 Obsidian 或第三方插件改过的 Markdown 导回工作台。')}</small>
+          <small>{t('同步会读取“灵感”和“内容”目录，也兼容“内容选题/作者/标题.md”这类本地选题文件；“内容选题”和“内容”下没有 frontmatter 的文件会按路径生成稳定 ID。')}</small>
+        </div>
         <label className="md-field">
           <span>{t('RedFox API Key')}{settings.redfox?.hasKey ? t('（已保存，末四位 {hint}）', { hint: settings.redfox.keyHint }) : ''}</span>
           <input type="password" autoComplete="off" value={form.redfoxApiKey} onChange={e => set('redfoxApiKey', e.target.value)} placeholder={settings.redfox?.hasKey ? t('留空表示不修改') : 'REDFOX_API_KEY'} />

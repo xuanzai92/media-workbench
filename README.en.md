@@ -128,7 +128,20 @@ Quit the desktop app completely (⌘Q) before installing and reopen it afterward
 dsh plugin --profile desktop remove media-workbench
 ```
 
-Uninstalling does not delete your content. State, settings and imported media are stored in `~/.dsh/media-workbench/` by default and can be moved in Settings. **Save drafts to** controls the export folder separately.
+Uninstalling does not delete your content. State, settings and imported media are stored in `~/.dsh/media-workbench/` by default and can be moved in Settings. The workbench automatically manages `灵感/`, `内容/`, and `attachments/` under that root, so there is no separate draft export path to configure.
+
+### Local Markdown and Obsidian
+
+The workspace directory is a local folder on this computer. When you leave it empty, Media Workbench uses `~/.dsh/media-workbench/`; a custom path is stored in a small location pointer while the actual data stays in the folder you chose. The main files are:
+
+- `state.json`: internal runtime state and undo data.
+- `attachments/`: uploaded images, covers, figures, and storyboard files. Legacy `files/` assets are copied here when the workspace is read, and old links remain readable.
+- `灵感/<id>.md`: one Markdown file per inspiration, with its title, body, source, tags, status, and stable ID.
+- `内容/<id>/内容.md`: one folder and Markdown file per generated or merged piece. The `format` field records `article`, `image_text`, or `video`; folders are organized by content ID so a piece does not split into separate copies when its format changes.
+
+Capturing or editing an inspiration, starting a draft, and generating assets update the Markdown projection. Opening the workbench or clicking **Sync local Markdown** in Settings scans `灵感/`, `内容/`, and compatible `内容选题/<author>/*.md` files. Plain Markdown files placed directly under `内容/` are imported as content, and topic files without a stable `id` get one from their relative path; `type`, `tags`, `发布渠道`, and `发布时间` are mapped when present. Root-level summaries and templates are skipped. Custom inspiration frontmatter is retained in `markdownMeta`, and custom Markdown sections in the body are preserved. Content title, body, format, source IDs, status, platform, and schedule can be synced back; existing covers, figures, and storyboard media stay in the runtime state instead of being inferred from edited tables. Relative links let you open the whole workspace directory as an Obsidian vault.
+
+The app updates the same file for the same ID instead of making a daily copy. Files remain on disk until you remove them. Deleting an inspiration in the workbench also removes `灵感/<id>.md`; deleting a generated piece removes `内容/<id>/` while keeping the original inspiration. Media files follow the workbench state and production lifecycle.
 
 ## Models and services
 
@@ -205,7 +218,7 @@ npm pack                   # create the installable tgz
 | `docs/assets/` | README screenshots |
 | `test/` | Host, i18n, image and import tests |
 
-Restart DeepSeek Harness after changing `src/`. The Host route prefix is `/media-workbench/`, and local uploads and generated media use `media-workbench/files/...` URIs.
+Restart DeepSeek Harness after changing `src/`. The Host route prefix is `/media-workbench/`, and local uploads and generated media use `media-workbench/attachments/...` URIs; legacy `media-workbench/files/...` URIs remain readable.
 
 ## Feedback and security
 

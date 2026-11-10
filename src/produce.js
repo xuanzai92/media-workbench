@@ -162,14 +162,15 @@ export function applyRevision(production, revise, { canDraw = true } = {}) {
 
 export class Producer {
   /**
-   * @param {{store: object, settings: object, callText: Function, generate: Function, ready?: Function}} deps - 存储、设置、文本模型和生图函数。
+   * @param {{store: object, settings: object, callText: Function, generate: Function, ready?: Function, onPersist?: Function}} deps - 存储、设置、文本模型、生图函数和可选的用户可见文件投影。
    */
-  constructor({ store, settings, callText, generate, ready = imageReady }) {
+  constructor({ store, settings, callText, generate, ready = imageReady, onPersist = null }) {
     this.store = store
     this.settings = settings
     this.callText = callText
     this.generate = generate
     this.ready = ready
+    this.onPersist = onPersist
     this.jobs = new Map()
     this.assets = new Set()
   }
@@ -192,27 +193,44 @@ export class Producer {
     }
   }
 
-  patch(id, mutate) {
-    return this.store.mutate('成稿', (state) => {
+  /** 成稿状态仍以 state.json 为准；投影失败不能中断生成任务。 */
+  async projectState(state = null) {
+    if (typeof this.onPersist !== 'function') return
+    try {
+      await this.onPersist(state ?? await this.store.read())
+    } catch {
+      // Markdown 是用户可见的副本，写入失败时保留核心成稿状态。
+    }
+  }
+
+  async patch(id, mutate) {
+    const state = await this.store.mutate('成稿', (state) => {
       const item = findTarget(state, id)
-      if (item?.production) mutate(item.production, item)
+      if (item?.production) {
+        mutate(item.production, item)
+        item.updatedAt = new Date().toISOString()
+      }
       return state
     }, { undoable: false })
+    await this.projectState(state)
+    return state
   }
 
   async start(id, { format = 'video', references = [] } = {}) {
     const normalized = normalizeOutputFormat(format)
     if (this.jobs.has(id)) return false
-    const state = await this.store.read()
-    const item = state.items.find(row => row.id === id)
+    const current = await this.store.read()
+    const item = current.items.find(row => row.id === id)
     if (!item) throw Object.assign(new Error(tr('找不到这条灵感')), { status: 404 })
     const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), sourceIds: [id], referenceIds: referenceIds(references), format: normalized, merged: false }
     this.jobs.set(id, job)
-    await this.store.mutate('开始成稿', (draft) => {
+    const state = await this.store.mutate('开始成稿', (draft) => {
       const target = draft.items.find(row => row.id === id)
       target.production = { status: 'running', stage: 'brief', startedAt: new Date().toISOString(), title: target.title, article: '', format: normalized, sourceIds: [id], references: job.referenceIds, cover: null, images: [], shots: [] }
+      target.updatedAt = new Date().toISOString()
       return draft
     }, { undoable: false })
+    await this.projectState(state)
     // 不等待：浏览器靠轮询拿进度
     this.run(id, job).catch(() => {}).finally(() => this.jobs.delete(id))
     return true
@@ -221,20 +239,24 @@ export class Producer {
   async startMerge(sourceIds, { format = 'video', references = [], draftId = null } = {}) {
     const normalized = normalizeOutputFormat(format)
     const ids = [...new Set((Array.isArray(sourceIds) ? sourceIds : []).filter(Boolean))].slice(0, 12)
-    const state = await this.store.read()
-    const sources = ids.map(id => state.items.find(row => row.id === id)).filter(Boolean)
+    const current = await this.store.read()
+    const sources = ids.map(id => current.items.find(row => row.id === id)).filter(Boolean)
     if (sources.length < 2) throw Object.assign(new Error(tr('至少选择两条灵感才能合并成稿')), { status: 400 })
-    const reusableId = typeof draftId === 'string' && draftId && state.mergedDrafts?.some(row => row.id === draftId)
+    const reusableId = typeof draftId === 'string' && draftId && current.mergedDrafts?.some(row => row.id === draftId)
     const id = reusableId ? draftId : newId('md')
-    const item = buildMergedItem(state, sources.map(row => row.id), id)
-    if (!reusableId) await this.store.mutate('开始合并成稿', (draft) => {
-      draft.mergedDrafts ??= []
-      draft.mergedDrafts.unshift({ id, sourceIds: item.sourceIds, title: item.title, createdAt: new Date().toISOString(), status: 'outline', scheduledAt: null, platform: null, production: null })
-      return draft
-    }, { undoable: false })
+    const item = buildMergedItem(current, sources.map(row => row.id), id)
+    if (!reusableId) {
+      const state = await this.store.mutate('开始合并成稿', (draft) => {
+        draft.mergedDrafts ??= []
+        const now = new Date().toISOString()
+        draft.mergedDrafts.unshift({ id, sourceIds: item.sourceIds, title: item.title, createdAt: now, updatedAt: now, status: 'outline', scheduledAt: null, platform: null, production: null })
+        return draft
+      }, { undoable: false })
+      await this.projectState(state)
+    }
     const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), sourceIds: item.sourceIds, referenceIds: referenceIds(references), format: normalized, merged: true }
     this.jobs.set(id, job)
-    await this.store.mutate('开始合并成稿', (draft) => {
+    const state = await this.store.mutate('开始合并成稿', (draft) => {
       const target = draft.mergedDrafts.find(row => row.id === id)
       target.sourceIds = item.sourceIds
       target.title = item.title
@@ -242,8 +264,10 @@ export class Producer {
       target.scheduledAt ??= null
       target.platform ??= null
       target.production = { status: 'running', stage: 'brief', startedAt: new Date().toISOString(), title: item.title, article: '', format: normalized, sourceIds: item.sourceIds, references: job.referenceIds, cover: null, images: [], shots: [] }
+      target.updatedAt = new Date().toISOString()
       return draft
     }, { undoable: false })
+    await this.projectState(state)
     this.run(id, job).catch(() => {}).finally(() => this.jobs.delete(id))
     return id
   }
@@ -267,8 +291,8 @@ export class Producer {
     const { signal } = job.controller
     try {
       const settings = await this.settings.read()
-      const state = await this.store.read()
-      const snapshot = JSON.parse(JSON.stringify(state))
+      const current = await this.store.read()
+      const snapshot = JSON.parse(JSON.stringify(current))
       const sourceItems = job.sourceIds.map(sourceId => snapshot.items.find(row => row.id === sourceId)).filter(Boolean)
       const referenceItems = job.referenceIds.map(referenceId => snapshot.items.find(row => row.id === referenceId)).filter(row => row?.imported && !job.sourceIds.includes(row.id))
       const promptSources = [...sourceItems, ...referenceItems]
@@ -349,15 +373,17 @@ export class Producer {
       await Promise.all(tasks)
       if (signal.aborted) throw new Error('cancelled')
 
-      await this.store.mutate('完成成稿', (draft) => {
+      const state = await this.store.mutate('完成成稿', (draft) => {
         const target = findTarget(draft, id)
         if (!target?.production) return draft
         target.production.status = 'done'
         target.production.stage = 'done'
         target.production.finishedAt = new Date().toISOString()
+        target.updatedAt = target.production.finishedAt
         if (['idea', 'outline'].includes(target.status)) target.status = target.scheduledAt ? 'ready' : 'draft'
         return draft
       }, { undoable: false })
+      await this.projectState(state)
     } catch (err) {
       const cancelled = signal.aborted
       await this.patch(id, (production) => {
@@ -400,12 +426,12 @@ export class Producer {
     try {
       const { buffer, ext } = await this.generateWithRetry(settings.image, prompt, signal)
       const name = `${newId('g')}${ext}`
-      await writeFile(join(this.store.filesDir, name), buffer)
+      await writeFile(join(this.store.attachmentsDir, name), buffer)
       await this.patch(id, (production) => {
         const asset = assetAt(production, target)
         if (!asset) return
         asset.status = 'done'
-        asset.src = `media-workbench/files/${name}`
+        asset.src = `media-workbench/attachments/${name}`
       })
     } catch (err) {
       if (signal?.aborted) return

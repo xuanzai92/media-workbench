@@ -26,9 +26,30 @@ function text(value, max = 4000) {
   return typeof value === 'string' ? value.trim().slice(0, max) : ''
 }
 
+function scalarText(value, max = 4000) {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value).slice(0, max)
+  return text(value, max)
+}
+
+function listText(value, max = 4000) {
+  if (Array.isArray(value)) return value.map(item => typeof item === 'object' && item ? scalarText(item.root_name ?? item.primary ?? item.name ?? item.category ?? item.network, 200) : scalarText(item, 200)).filter(Boolean).join('、').slice(0, max)
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      if (Array.isArray(parsed)) return listText(parsed, max)
+    } catch { /* 普通字符串 */ }
+  }
+  return text(value, max)
+}
+
 function count(value) {
   const n = typeof value === 'string' && value.trim() ? Number(value) : value
   return Number.isFinite(n) && n > 0 ? Math.round(n) : 0
+}
+
+function rankingMetric(value) {
+  if (typeof value === 'string' && value.trim()) return value.trim().slice(0, 30)
+  return count(value)
 }
 
 function dateValue(value) {
@@ -116,14 +137,21 @@ function apiError(code, message) {
 export function createRedfoxClient(config = {}, fetchImpl = fetch) {
   const apiKey = typeof config.apiKey === 'string' ? config.apiKey.trim() : ''
   const baseUrl = typeof config.baseUrl === 'string' && /^https?:\/\//i.test(config.baseUrl) ? config.baseUrl.replace(/\/+$/, '') : BASE_URL
-  const request = async (path, body) => {
+  const request = async (path, body, options = {}) => {
     if (!apiKey) throw Object.assign(new Error(tr('请先在设置里填写 RedFox API Key')), { status: 400 })
-    const response = await fetchImpl(`${baseUrl}${path}`, {
-      method: 'POST',
-      headers: { REDFOX_API_KEY: apiKey, 'content-type': 'application/json' },
-      body: JSON.stringify(body ?? {}),
+    const method = String(options.method || 'POST').toUpperCase()
+    const query = method === 'GET' && body && typeof body === 'object'
+      ? new URLSearchParams(Object.entries(body).filter(([, value]) => value !== undefined && value !== null && value !== '')).toString()
+      : ''
+    const init = {
+      method,
+      headers: { REDFOX_API_KEY: apiKey, 'X-API-KEY': apiKey, 'content-type': 'application/json' },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    })
+    }
+    if (method === 'GET') {
+      init.headers = { REDFOX_API_KEY: apiKey, 'X-API-KEY': apiKey }
+    } else init.body = JSON.stringify(body ?? {})
+    const response = await fetchImpl(`${baseUrl}${path}${query ? `?${query}` : ''}`, init)
     const raw = await response.text()
     let data
     try { data = JSON.parse(raw) } catch { throw Object.assign(new Error(tr('RedFox 返回的内容不是有效 JSON')), { status: 502 }) }
@@ -224,6 +252,142 @@ export async function fetchAccount(account, client) {
   return { posts, profile: profileOf(account.platform, profileData, account), cost: null }
 }
 
+const RANKING_CONFIG = {
+  xiaohongshu: { platform: '小红书', path: '/story/api/xhsData/query', periods: { day: 1, week: 2, month: 3 } },
+  douyin: { platform: '抖音', path: '/story/api/dy/search/getDailyRank', periods: { day: null } },
+}
+
+const RANKING_BOARDS = {
+  xhs_weekly_viral: { platform: 'xiaohongshu', period: 'week', kind: 'xhs-notes', method: 'GET', path: '/story/api/cozeSkill/getXhsCozeSkillDataSeven', source: '小红书七日数据爆款文章-GitHub' },
+  xhs_daily_viral: { platform: 'xiaohongshu', period: 'day', kind: 'xhs-notes', method: 'GET', path: '/story/api/cozeSkill/getXhsCozeSkillDataOne', source: '小红书单日数据爆款文章-GitHub' },
+  xhs_breakout: { platform: 'xiaohongshu', period: 'day', kind: 'xhs-notes', method: 'POST', path: '/story/api/cozeSkill/getLowPowderExplosiveArticle', source: '小红书黑马爆文榜-GitHub' },
+  douyin_hot_works: { platform: 'douyin', period: 'day', kind: 'douyin-works', method: 'POST', path: '/story/api/dy/search/likesRank', source: '抖音每日热门作品榜-SDK' },
+  douyin_daily_rising: { platform: 'douyin', period: 'day', kind: 'douyin-works', method: 'POST', path: '/story/api/dy/search/getDailyRank', source: '抖音每日点赞飙升榜-SDK' },
+  douyin_weekly_rising: { platform: 'douyin', period: 'week', kind: 'douyin-works', method: 'POST', path: '/story/api/dy/search/getWeeklyRank', source: '抖音七日点赞飙升榜-SDK' },
+  x_hot_accounts: { platform: 'x', period: 'day', kind: 'x-accounts', method: 'POST', path: '/story/api/x/hotAccount/rankList', source: 'X账号榜-GitHub' },
+}
+
+function rankingRows(data) {
+  if (Array.isArray(data)) return data
+  for (const key of ['list', 'items', 'records', 'results', 'data']) {
+    if (Array.isArray(data?.[key])) return data[key]
+    if (data?.[key] && typeof data[key] === 'object') {
+      const nested = rankingRows(data[key])
+      if (nested.length) return nested
+    }
+  }
+  return []
+}
+
+function normalizeXhsRanking(rows) {
+  return rows.map((row, index) => ({
+    rank: Number(row?.accountRanking) || index + 1,
+    name: text(row?.accountName, 100) || tr('无标题'),
+    avatar: httpsUrl(row?.avatar),
+    url: httpsUrl(row?.accountLink),
+    category: text(row?.category, 60),
+    date: text(row?.rankDate, 20),
+    period: text(row?.rankPeriod, 10),
+    stats: {
+      followers: text(row?.fansCount, 30),
+      followerGrowth: text(row?.fansGrowth, 30),
+      notes: count(row?.newNoteCount),
+      likes: text(row?.likedGrowth, 30),
+      comments: text(row?.commentsGrowth, 30),
+      saves: text(row?.collectedGrowth, 30),
+      shares: text(row?.sharedGrowth, 30),
+    },
+  }))
+}
+
+function normalizeXhsNoteRanking(rows) {
+  return rows.map((row, index) => {
+    const growth = row?.anaAdd ?? row?.stats ?? {}
+    return {
+      rank: Number(row?.rankNo ?? row?.rank ?? row?.ranking) || index + 1,
+      name: text(row?.userName ?? row?.authorName ?? row?.accountName, 100) || tr('无标题'),
+      title: text(row?.title ?? row?.workTitle ?? row?.noteTitle ?? row?.desc, 180) || firstLine(row?.content, tr('无标题')),
+      avatar: httpsUrl(row?.avatar ?? row?.userAvatar ?? row?.avatarUrl ?? row?.pictureUrl ?? row?.userHeadUrl),
+      cover: httpsUrl(row?.coverUrl ?? row?.cover ?? row?.photoUrl),
+      url: httpsUrl(row?.photoJumpUrl ?? row?.workUrl ?? row?.noteUrl ?? row?.userJumpUrl) ?? (text(row?.photoId, 120) ? `https://www.xiaohongshu.com/explore/${text(row.photoId, 120)}` : null),
+      category: text(row?.category, 60),
+      date: text(row?.rankDate ?? row?.publicTime, 30),
+      stats: {
+        followers: text(row?.fans ?? row?.fansCount, 30),
+        likes: rankingMetric(growth?.addLikeCount ?? growth?.useLikeCount ?? row?.addLikeCount ?? row?.likeCount ?? row?.useLikeCount),
+        comments: rankingMetric(growth?.addCommentCount ?? growth?.useCommentCount ?? row?.addCommentCount ?? row?.commentCount ?? row?.useCommentCount),
+        saves: rankingMetric(growth?.addCollectedCunt ?? growth?.addCollectedCount ?? growth?.collectedCount ?? row?.collectedCount),
+        shares: rankingMetric(growth?.addShareCount ?? growth?.useShareCount ?? row?.addShareCount ?? row?.shareCount ?? row?.useShareCount),
+        interactions: rankingMetric(growth?.addInteractiveount ?? growth?.addInteractiveCount ?? growth?.interactiveCount ?? row?.interactiveCount),
+      },
+    }
+  })
+}
+
+function normalizeDouyinRanking(rows) {
+  return rows.map((row, index) => ({
+    rank: Number(row?.rankNo ?? row?.rank) || index + 1,
+    name: text(row?.user_nickname ?? row?.accountName ?? row?.authorName, 100) || tr('无标题'),
+    title: text(row?.aweme_desc ?? row?.title, 180) || firstLine(row?.content, tr('无标题')),
+    avatar: httpsUrl(row?.user_avatar ?? row?.avatarUrl),
+    cover: httpsUrl(row?.cover_url ?? row?.coverUrl),
+    url: httpsUrl(row?.share_url ?? row?.workUrl),
+    category: text(row?.category, 60),
+    date: text(row?.rank_date_str ?? row?.publishTime, 30) || (Number.isFinite(row?.rank_date) ? dateValue(row.rank_date).slice(0, 10) : ''),
+    period: text(row?.period, 10) || tr('日榜'),
+    stats: {
+      likes: rankingMetric(row?.add_digg_count ?? row?.likeCount ?? row?.diggCount ?? row?.like),
+      comments: rankingMetric(row?.add_comment_count ?? row?.commentCount ?? row?.comment),
+      saves: rankingMetric(row?.add_collect_count ?? row?.collectCount ?? row?.collect),
+      shares: rankingMetric(row?.add_share_count ?? row?.add_forward_count ?? row?.shareCount ?? row?.share),
+    },
+  }))
+}
+
+function normalizeXRanking(rows) {
+  return rows.map((row, index) => ({
+    rank: Number(row?.rankNo ?? row?.rank) || index + 1,
+    name: text(row?.fullName ?? row?.name ?? row?.username, 100) || tr('无标题'),
+    title: text(row?.title ?? row?.biography, 180),
+    avatar: httpsUrl(row?.pictureUrl ?? row?.avatarUrl ?? row?.avatar),
+    url: httpsUrl(row?.profileUrl ?? row?.url),
+    category: listText(row?.categories ?? row?.categoriesJson ?? row?.category ?? row?.countryName, 60),
+    date: text(row?.rankDate, 30),
+    stats: {
+      followers: count(row?.xFollowerCount ?? row?.followerCount ?? row?.followers),
+      score: scalarText(row?.xScore ?? row?.score, 30),
+      growth: scalarText(row?.growthPercentage ?? row?.growth, 30),
+      networks: listText(row?.networks ?? row?.networksJson ?? row?.otherNetworks, 30),
+    },
+  }))
+}
+
+/** 读取 RedFox 的社媒榜单。不同平台的字段统一成页面可直接展示的结构。 */
+export async function fetchRankings({ platform = 'xiaohongshu', period = 'day', date = '', category = '', ranking = '', gender = 'all' } = {}, client) {
+  const board = ranking ? RANKING_BOARDS[ranking] : null
+  if (ranking && (!board || board.platform !== platform)) throw Object.assign(new Error(tr('暂不支持这个榜单')), { status: 400 })
+  const config = RANKING_CONFIG[platform]
+  if (!board && (!config || !config.periods[period] && !(platform === 'douyin' && period === 'day'))) throw Object.assign(new Error(tr('暂不支持这个榜单')), { status: 400 })
+  const value = date || new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
+  if (!board) {
+    const body = platform === 'xiaohongshu'
+      ? { dateType: config.periods[period], rankDate: value, type: category || '综合全部' }
+      : { type: category || '全部', startTime: value }
+    const data = await client.request(config.path, body)
+    const rows = platform === 'xiaohongshu' ? normalizeXhsRanking(rankingRows(data)) : normalizeDouyinRanking(rankingRows(data))
+    return { platform, period, date: value, category: category || (platform === 'xiaohongshu' ? '综合全部' : '全部'), rows }
+  }
+  const apiCategory = platform === 'x' ? (category && category !== '综合全部' ? category : 'all') : (category || '综合全部')
+  const body = platform === 'xiaohongshu'
+    ? { rankDate: value, source: board.source, category: apiCategory }
+    : platform === 'douyin'
+      ? { type: category || '全部', startTime: value, ...(ranking === 'douyin_hot_works' ? { endTime: value } : {}), source: board.source }
+      : { pageNum: 1, rankDate: value, gender: gender || 'all', category: apiCategory, source: board.source }
+  const data = await client.request(board.path, body, { method: board.method })
+  const rows = board.kind === 'xhs-notes' ? normalizeXhsNoteRanking(rankingRows(data)) : board.kind === 'x-accounts' ? normalizeXRanking(rankingRows(data)) : normalizeDouyinRanking(rankingRows(data))
+  return { platform, ranking, period: board.period, date: value, category: category || (platform === 'x' ? 'all' : '综合全部'), rows }
+}
+
 function sniffImage(buffer) {
   if (buffer[0] === 0xff && buffer[1] === 0xd8) return '.jpg'
   if (buffer[0] === 0x89 && buffer[1] === 0x50) return '.png'
@@ -246,7 +410,7 @@ async function saveCover(raw, filesDir, fetchImpl) {
       if (!ext) return null
       const name = `${newId('c')}${ext}`
       await writeFile(join(filesDir, name), buffer)
-      return `media-workbench/files/${name}`
+      return `media-workbench/attachments/${name}`
     }
   } catch { /* 封面不是导入的必要条件 */ }
   return null

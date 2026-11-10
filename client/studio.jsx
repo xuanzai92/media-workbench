@@ -303,7 +303,7 @@ function MergedStudio({ draft, sources, chatOpen }) {
     setDesk({ view: 'home', mode: 'scatter', focusId: null, focusIds: [], selectedIds: [], mergedId: null, outputFormat: null, sheetOrigin: null, studioDock: false, related: { query: t('来源灵感'), ids: sourceIds, newId: null } })
   }, [sourceIds])
   const generate = React.useCallback((format) => runProduceMerge(draft.sourceIds, { format, draftId: draft.id, references: production?.references ?? [] }), [draft.id, draft.sourceIds, production?.references])
-  const item = React.useMemo(() => ({ ...sources[0], id: draft.id, title: production?.title || draft.title, body: sources.map(source => source.body || source.title).join('\n\n'), production, sourceIds: draft.sourceIds }), [draft.id, draft.sourceIds, draft.title, production, sources])
+  const item = React.useMemo(() => ({ ...sources[0], id: draft.id, title: production?.title || draft.title, body: sources.map(source => source.body || source.title).join('\n\n'), production, sourceIds: draft.sourceIds, _merged: true }), [draft.id, draft.sourceIds, draft.title, production, sources])
   React.useEffect(() => {
     if (running || [production?.cover, ...(production?.images ?? []), ...(production?.shots ?? [])].some(isBusy)) return watchProduction(draft.id)
     return undefined
@@ -416,10 +416,14 @@ function HeroTile({ item, live, onView }) {
         {production?.savedAt ? <IconButton icon="folder" label={t('打开保存的文件夹')} onClick={() => revealSaved(item.id)} /> : null}
         {done ? <IconButton icon="refresh" label={t('重新成稿')} onClick={again} /> : null}
         <IconButton icon="gear" label={t('设置')} onClick={() => setDesk({ settingsOpen: true })} />
-        <IconButton icon="trash" label={t('删除这条灵感')} onClick={() => {
-          dispatchOps([{ op: 'delete_item', id: item.id }], { label: t('删除《{title}》', { title: item.title.slice(0, 10) }) })
-          closeItem()
-        }} />
+        {(production || !item._merged) ? <IconButton icon="trash" label={production ? t('删除成稿') : t('删除这条灵感')} onClick={() => {
+          if (production) {
+            dispatchOps([{ op: 'delete_production', id: item.id }], { label: t('删除《{title}》的成稿', { title: (production.title || item.title).slice(0, 10) }) })
+          } else if (!item._merged) {
+            dispatchOps([{ op: 'delete_item', id: item.id }], { label: t('删除《{title}》', { title: item.title.slice(0, 10) }) })
+            closeItem()
+          }
+        }} /> : null}
       </div>
     </section>
   )
@@ -462,7 +466,7 @@ function ArticleBody({ production, text, onView }) {
   )
 }
 
-function ArticleTile({ item, live, open, onToggle, onView, tileRef, heading = '脚本' }) {
+function ArticleTile({ item, live, open, onToggle, onView, onDelete, tileRef, heading = '脚本' }) {
   const production = item.production
   const running = production?.status === 'running'
   const scroller = React.useRef(null)
@@ -515,6 +519,7 @@ function ArticleTile({ item, live, open, onToggle, onView, tileRef, heading = '�
             {editing ? <button type="button" className="md-btn is-small" onClick={save}><Icon name="check" size={13} />{t('完成')}</button> : <IconButton icon="edit" label={t('直接修改')} onClick={() => { skipBlurSave.current = false; setEditing(true) }} />}
             <IconButton icon="copy" label={copyLabel} onClick={copy} />
             <IconButton icon={open ? 'close' : 'expand'} label={open ? t('收起') : t('放大阅读')} onClick={onToggle} />
+            {onDelete ? <IconButton icon="trash" label={t('删除成稿')} onClick={onDelete} /> : null}
           </>
         ) : null}
       </header>
@@ -679,6 +684,10 @@ function Sheet({ item, live, formatOverride }) {
   const origin = React.useRef(null)
   const closing = React.useRef(false)
   const format = item.production?.format ?? formatOverride ?? 'video'
+  const deleteDraft = React.useCallback(() => {
+    const title = (item.production?.title || item.title || '').slice(0, 10)
+    dispatchOps([{ op: 'delete_production', id: item.id }], { label: t('删除《{title}》的成稿', { title }) })
+  }, [item.id, item.production?.title, item.title])
 
   const expand = (name) => {
     const box = bento.current.getBoundingClientRect()
@@ -727,7 +736,7 @@ function Sheet({ item, live, formatOverride }) {
     return (
       <main className={`md-format-sheet md-format-${format}`}>
         <section className="md-format-article" ref={el => { articleRef.current = el }}>
-          <ArticleTile item={item} live={live} heading={format === 'image_text' ? '内容' : '文章'} open={format === 'article'} onToggle={() => {}} onView={setViewing} tileRef={articleRef} />
+          <ArticleTile item={item} live={live} heading={format === 'image_text' ? '内容' : '文章'} open={format === 'article'} onToggle={() => {}} onView={setViewing} onDelete={item.production ? deleteDraft : null} tileRef={articleRef} />
         </section>
         {format === 'image_text' ? <ImageTextTile item={item} onView={setViewing} /> : null}
         {viewing ? <Viewer item={item} target={viewing} onChange={setViewing} onClose={() => setViewing(null)} /> : null}

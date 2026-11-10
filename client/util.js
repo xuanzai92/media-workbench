@@ -125,7 +125,8 @@ export function unit(n, zh) {
 /** 连续记录天数：今天还没记时，从昨天往回算，不会让今天一早就断掉。 */
 /** 灵感墙和邮票只放自己记下的灵感，从账号导入的已发内容不算。 */
 export function isIdea(item) {
-  return !item.parentId && !item.imported
+  // 本地 Markdown 的旧记录曾被误标为 imported；有 externalId 的才是账号导入内容。
+  return !item.parentId && (!item.imported || item.importedFromMarkdown === true || !item.externalId)
 }
 
 export function computeStreak(items, now = new Date()) {

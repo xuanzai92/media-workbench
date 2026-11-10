@@ -114,5 +114,6 @@ export function publicSettings(settings, toolAvailable = false) {
   const { apiKey, ...image } = settings.image
   const redfox = settings.redfox ?? { apiKey: '' }
   const { apiKey: redfoxApiKey, ...redfoxPublic } = redfox
-  return { ...settings, image: { ...image, hasKey: Boolean(apiKey), keyHint: apiKey ? apiKey.slice(-4) : '' }, redfox: { ...redfoxPublic, hasKey: Boolean(redfoxApiKey), keyHint: redfoxApiKey ? redfoxApiKey.slice(-4) : '' }, imageToolAvailable: toolAvailable, imageReady: imageReady(settings, toolAvailable) }
+  const { exportDir: _legacyExportDir, ...visibleSettings } = settings
+  return { ...visibleSettings, image: { ...image, hasKey: Boolean(apiKey), keyHint: apiKey ? apiKey.slice(-4) : '' }, redfox: { ...redfoxPublic, hasKey: Boolean(redfoxApiKey), keyHint: redfoxApiKey ? redfoxApiKey.slice(-4) : '' }, imageToolAvailable: toolAvailable, imageReady: imageReady(settings, toolAvailable) }
 }

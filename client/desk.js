@@ -67,6 +67,7 @@ export async function dispatchOps(ops, { label = t('操作'), undoable = true, s
     const data = await request('ops', { ops, label, undoable })
     setDesk({ state: data.state, canUndo: undoable || snapshot.canUndo })
     if (data.errors?.length) toast(data.errors[0], { error: true })
+    else if (data.markdownError) toast(t('Markdown 同步失败：{error}', { error: data.markdownError }), { error: true })
     else if (!silent && data.receipts?.[0]) toast(data.receipts[0].text, { undo: undoable })
     return data
   } catch (err) {
@@ -204,6 +205,28 @@ export async function saveSettings(payload) {
   }
 }
 
+/** 扫描工作台目录里的灵感、内容选题和内容 Markdown，并立即回写最新投影。 */
+export async function syncMarkdownFiles() {
+  try {
+    const data = await request('markdown/sync', {})
+    setDesk({ state: data.state })
+    if (data.errors?.length) toast(data.errors[0], { error: true })
+    else if (data.markdownError) toast(t('Markdown 同步失败：{error}', { error: data.markdownError }), { error: true })
+    else {
+      const imported = data.imported ?? 0
+      const updated = data.updated ?? 0
+      const skipped = data.skipped ?? 0
+      const detail = data.skippedFiles?.[0]
+      const summary = t('已同步 Markdown（新增 {imported}，更新 {updated}，跳过 {skipped}）', { imported, updated, skipped })
+      toast(detail && skipped && !imported && !updated ? `${summary}：${detail}` : summary, { error: Boolean(skipped && !imported && !updated) })
+    }
+    return data
+  } catch (err) {
+    report(err)
+    return null
+  }
+}
+
 export async function fetchModels() {
   return request('models')
 }
@@ -221,6 +244,15 @@ export async function fetchAihotStory(url, { refresh = false } = {}) {
   const params = new URLSearchParams({ url: String(url || '') })
   if (refresh) params.set('refresh', '1')
   return request(`aihot-story?${params.toString()}`)
+}
+
+export async function fetchRedfoxRankings({ platform = 'xiaohongshu', ranking = '', period = 'day', date = '', category = '', gender = '' } = {}) {
+  const params = new URLSearchParams({ platform, period })
+  if (ranking) params.set('ranking', ranking)
+  if (date) params.set('date', date)
+  if (category) params.set('category', category)
+  if (gender) params.set('gender', gender)
+  return request(`redfox/rankings?${params.toString()}`)
 }
 
 /** 切换助手模型；两个字段都空表示跟随默认。 */
@@ -288,7 +320,8 @@ export async function saveProduced(id) {
     const videoCover = await coverDataUrl({ src: production.cover?.src, text: production.coverText || production.title }).catch(() => undefined)
     const data = await request('produce/save', { id, videoCover })
     setDesk({ state: data.state })
-    toast(t('已保存到 {path}', { path: data.path }))
+    if (data.markdownError) toast(t('Markdown 同步失败：{error}', { error: data.markdownError }), { error: true })
+    else toast(t('已保存到 {path}', { path: data.path }))
   } catch (err) {
     report(err)
   }

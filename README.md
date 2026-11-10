@@ -148,7 +148,20 @@ dsh plugin --profile web add "file:/绝对路径/media-workbench-1.0.1.tgz"
 dsh plugin --profile desktop remove media-workbench
 ```
 
-卸载不会删除内容。状态、设置和导入媒体默认保存在 `~/.dsh/media-workbench/`，可以在设置中改成自定义本地路径；「成稿保存到」单独控制导出的文件夹。
+卸载不会删除内容。状态、设置和导入媒体默认保存在 `~/.dsh/media-workbench/`，可以在设置中改成自定义本地路径。工作台会在这个根目录下自动管理 `灵感/`、`内容/` 和 `attachments/`，不需要再单独填写成稿保存路径。
+
+### 本地 Markdown 与 Obsidian
+
+工作台数据目录是本机目录。没有设置时使用 `~/.dsh/media-workbench/`；设置里的自定义路径会写入一个位置指针，实际数据仍留在你选择的目录中。目录里主要有这些内容：
+
+- `state.json`：工作台运行状态，供应用快速读取和撤销。
+- `attachments/`：上传图片、封面、配图和分镜文件。旧版本的 `files/` 会在读取工作台时复制到这里，旧链接仍然可以读取。
+- `灵感/<id>.md`：每条灵感一个 Markdown 文件，包含标题、正文、来源、标签、状态和稳定 ID。
+- `内容/<id>/内容.md`：每个合并成稿或普通成稿一个文件夹和一个 Markdown 主文件。`format` 字段记录 `article`、`image_text` 或 `video`，文件夹按内容 ID 组织，避免同一内容因为形式变化而散落成多份。
+
+采集灵感、修改灵感、开始成稿和生成画面时，工作台会把最新状态同步到这些 Markdown 文件。打开工作台或点击设置里的「同步本地 Markdown」时，会扫描 `灵感/`、`内容/` 和兼容的 `内容选题/<作者>/*.md`；`内容/` 根下的普通 Markdown 可以直接作为成稿导入，`内容选题` 下没有稳定 `id` 的文件会按相对路径生成稳定 ID，`type`、`tags`、`发布渠道` 和 `发布时间` 会映射到工作台字段，根目录的汇总文件和模板会跳过。灵感文件中的自定义 frontmatter 字段会保存在 `markdownMeta`，正文中的自定义 Markdown 区块会保留。内容文件的标题、正文、形式、来源 ID、状态、平台和排期可以回传；封面、配图和分镜表格保留工作台已有的媒体运行态，不会把 Obsidian 表格直接当成新的媒体配置。文件之间使用相对链接，直接把整个数据目录作为 Obsidian vault 即可查看和继续编辑。
+
+应用不会按天复制同一条灵感。相同 ID 会更新原文件；只要你不删除文件，灵感和成稿会一直保存在本地。在工作台删除灵感时，会同时删除对应的 `灵感/<id>.md`；删除成稿时，会删除对应的 `内容/<id>/`，但保留原始灵感。媒体文件仍由工作台的状态和成稿生命周期管理。
 
 ## 模型与服务
 
@@ -225,7 +238,7 @@ npm pack                  # 生成可安装的 tgz
 | `docs/assets/` | README 展示图 |
 | `test/` | Host、国际化、生图和导入相关测试 |
 
-修改 `src/` 后需要重启 DeepSeek Harness。Host 接口前缀是 `/media-workbench/`，本地上传和生成的媒体使用 `media-workbench/files/...` URI。
+修改 `src/` 后需要重启 DeepSeek Harness。Host 接口前缀是 `/media-workbench/`，本地上传和生成的媒体使用 `media-workbench/attachments/...` URI；旧的 `media-workbench/files/...` URI 仍兼容读取。
 
 ## 反馈与安全
 

@@ -17,6 +17,7 @@ export const PAGES = {
   草稿: 'Draft',
   待发布: 'Ready',
   已发布: 'Published',
+  归档: 'Archived',
   图片: 'Image',
   视频: 'Video',
   网页: 'Web',

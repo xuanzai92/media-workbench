@@ -2,8 +2,8 @@
 // 模型输出也是不可信输入，所以这里只放行白名单字段。
 import { currentLang, platformName, tr } from './i18n.js'
 
-export const STATUSES = ['idea', 'outline', 'draft', 'ready', 'published']
-export const STATUS_LABEL = { idea: '灵感', outline: '大纲', draft: '草稿', ready: '待发布', published: '已发布' }
+export const STATUSES = ['idea', 'outline', 'draft', 'ready', 'published', 'archived']
+export const STATUS_LABEL = { idea: '灵感', outline: '大纲', draft: '草稿', ready: '待发布', published: '已发布', archived: '归档' }
 export const KINDS = ['image', 'video', 'web', 'quote', 'note']
 export const PLATFORMS = ['公众号', '小红书', '抖音', 'B站', '视频号', 'TikTok', 'Instagram', 'YouTube', 'X']
 
@@ -80,6 +80,11 @@ function findById(list, id) {
   return entry
 }
 
+// 合并成稿在生成期间保存在独立集合里，状态和排期操作也必须能命中它。
+function findContentById(state, id) {
+  return state.items.find(row => row.id === id) ?? findById(state.mergedDrafts ?? [], id)
+}
+
 function short(text, n = 22) {
   const s = String(text || '').trim()
   return s.length > n ? `${s.slice(0, n)}…` : s
@@ -104,6 +109,8 @@ function applyStatus(item, status) {
   item.status = status
   if (status === 'published' && !item.publishedAt) item.publishedAt = new Date().toISOString()
   if (status !== 'published') delete item.publishedAt
+  // 归档代表暂时不发布，避免旧排期把它重新带回日历。
+  if (status === 'archived') item.scheduledAt = null
 }
 
 /** 排上日历就是待发布（还没成稿的算大纲）；取消排期退回去。已发布的不动。 */
@@ -137,7 +144,7 @@ const handlers = {
     return { text: tr('记下灵感《{title}》', { title: short(item.title) }), target: item.id, kind: 'item' }
   },
   update_item(state, op) {
-    const item = findById(state.items, op.id)
+    const item = findContentById(state, op.id)
     const { status, scheduledAt, ...fields } = pick(ITEM_FIELDS, op)
     Object.assign(item, fields)
     if (scheduledAt !== undefined) applySchedule(item, scheduledAt)
@@ -153,7 +160,7 @@ const handlers = {
     return { text: tr('删除《{title}》', { title: short(item.title) }) }
   },
   schedule_item(state, op) {
-    const item = findById(state.items, op.id)
+    const item = findContentById(state, op.id)
     const when = coerce('date', op.scheduledAt)
     if (when === undefined) throw new Error(tr('排期时间无效'))
     const platform = coerce('platform', op.platform)
@@ -162,7 +169,7 @@ const handlers = {
     return { text: when ? tr('把《{title}》排到 {when}', { title: short(item.title), when: fmtWhen(when) }) + (item.platform ? ` · ${platformName(item.platform)}` : '') : tr('取消《{title}》的排期', { title: short(item.title) }), target: item.id, kind: 'item' }
   },
   set_status(state, op) {
-    const item = findById(state.items, op.id)
+    const item = findContentById(state, op.id)
     const status = coerce('status', op.status)
     if (!status) throw new Error(tr('状态无效'))
     applyStatus(item, status)

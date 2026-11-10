@@ -76,6 +76,9 @@ export const EN = {
   'RedFox 请求太频繁，请稍后再试': 'RedFox is rate limiting requests. Try again later.',
   'RedFox 服务返回了错误（{code}）': 'RedFox returned an error ({code})',
   '请先在设置里填写 RedFox API Key': 'Add your RedFox API Key in Settings first',
+  '请输入搜索关键词': 'Enter a search keyword',
+  '搜索 RedFox 内容': 'Search RedFox content',
+  'RedFox 内容': 'RedFox content',
   未知状态: 'unknown status',
   '没抓到内容，账号可能是私密的或者还没发过内容。': 'No posts found. The account may be private or hasn\'t posted yet.',
 
@@ -187,6 +190,7 @@ export const EN = {
   草稿: 'Draft',
   待发布: 'Ready',
   已发布: 'Published',
+  归档: 'Archived',
 
   // 成稿
   中景: 'Medium shot',

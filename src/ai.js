@@ -123,7 +123,7 @@ const OP_DOC = `可用 ops（每个都是对象，op 字段必填，其余按需
 - update_item {id, title?, body?, tags?, status?, platform?, url?}
 - delete_item {id}
 - schedule_item {id, scheduledAt(ISO 8601，带时区；null 表示取消), platform?}
-- set_status {id, status: idea|outline|draft|ready|published}
+- set_status {id, status: idea|outline|draft|ready|published|archived}
 - add_skill {name, rule, source, status: proposed|active, confidence} / update_skill {id,...} / delete_skill {id}
 - set_style {id}：切换写作风格，id 从 styles 里选，id 为 null 表示不用特定风格
 - add_metric {itemId?, platform, date, views, likes, comments, shares, saves}
@@ -236,13 +236,13 @@ export function planPrompts(state, item, settings, format = 'video', sources = [
   const normalized = normalizeOutputFormat(format)
   const merged = sources.length > 1
   const { angle } = itemBrief(state, item)
-  const imageSchema = normalized === 'article' ? '"images":[]' : `"images":[{"anchor":"这张图放在哪个小标题之后，原样抄写小标题","caption":"${byLang('平实的中文图注，只说明画面内容，不超过 16 字', 'Plain caption describing only the image, no more than 8 words')}","prompt":"配图画面描述（英文）"}]`
+  const imageSchema = `"images":[{"anchor":"这张图放在哪个小标题之后，原样抄写小标题","caption":"${byLang('平实的中文图注，只说明画面内容，不超过 16 字', 'Plain caption describing only the image, no more than 8 words')}","prompt":"配图画面描述（英文）"}]`
   const shotSchema = normalized === 'video' ? '"shots":[{"shot":"景别","visual":"这一镜拍什么","voice":"这一镜的口播","seconds":5,"prompt":"这一镜的构图描述（英文）"}]' : '"shots":[]'
-  const typeText = normalized === 'article' ? '文章，只写文字' : normalized === 'image_text' ? '图文，写文章并安排配图' : '视频脚本，写文章并安排封面、配图和分镜'
+  const typeText = normalized === 'article' ? '文章，写完整结构并安排配图' : normalized === 'image_text' ? '图文，写短篇内容并安排配图' : '视频脚本，写文章并安排封面、配图和分镜'
   const system = `你是内容主编、美术指导和分镜师。根据${merged ? '多条灵感素材融合' : '一句灵感'}，定下这篇${typeText}的策划案。
 只输出一个 JSON 对象，字段按下面的顺序：
 {"title":"${normalized === 'video' ? '视频' : normalized === 'image_text' ? '图文' : '文章'}标题，具体、有钩子，${byLang('不超过 24 字', '不超过 60 个字符')}","coverText":"${normalized === 'video' ? '视频封面上的大字' : '封面大字（不用时留空）'}","facts":["这条内容用到的具体事实：数字、人名、案例，3 到 6 条"],"outline":["3 到 5 个小标题${byLang('', '，每个不超过 40 个字符') }"],"cover":"${normalized === 'video' ? '视频封面画面描述（英文）' : '留空'}","characters":"反复出现的人物和场景的外观描述（英文），没有就留空",${imageSchema},${shotSchema}}
-${normalized === 'article' ? 'images 必须为空，shots 必须为空。' : normalized === 'image_text' ? `images 正好 ${settings.imageCount} 个，shots 必须为空。` : `images 正好 ${settings.imageCount} 个，shots 正好 ${settings.shotCount} 个。`}
+  ${normalized === 'article' ? `images 正好 ${settings.imageCount} 个，shots 必须为空。` : normalized === 'image_text' ? `images 正好 ${settings.imageCount} 个，shots 必须为空。` : `images 正好 ${settings.imageCount} 个，shots 正好 ${settings.shotCount} 个。`}
 画面描述只写看得见的东西：主体、动作、环境、构图、光线。不要在画面里放任何文字。分镜要有景别变化，能串成一段完整的短视频，第一镜就要抓人。
 
 ${voiceBlock(state, settings.voice)}
@@ -283,7 +283,7 @@ export function fallbackPlan(item, article, settings, format = 'video') {
     coverText: shortCoverText(item.title),
     outline: headings,
     cover: `A striking visual metaphor for: ${item.title}`,
-    images: normalized === 'article' ? [] : Array.from({ length: settings.imageCount }, (_, i) => ({ anchor: headings[i + 1] ?? headings[i] ?? '', caption: '', prompt: `An illustration about: ${item.title}. ${headings[i] ?? ''}` })),
+    images: Array.from({ length: settings.imageCount }, (_, i) => ({ anchor: headings[i + 1] ?? headings[i] ?? '', caption: '', prompt: `An illustration about: ${item.title}. ${headings[i] ?? ''}` })),
     shots: normalized === 'video' ? Array.from({ length: settings.shotCount }, (_, i) => {
       const beat = beats[i % beats.length]
       return { shot: sizes[i % sizes.length], visual: beat, voice: i === 0 ? item.title : '', seconds: 5, prompt: `${beat}, about: ${item.title}` }

@@ -33,7 +33,9 @@ function hostOf(url) {
   }
 }
 
-export function Card({ item: raw, onOpen, selected = false }) {
+const FORMAT_LABEL = { image_text: '图文', article: '文章', video: '视频脚本' }
+
+export function Card({ item: raw, onOpen, selected = false, drafted = false, draftFormat = null }) {
   const item = displayItem(raw)
   const inverted = item.pinned
   const running = item.production?.status === 'running'
@@ -41,6 +43,8 @@ export function Card({ item: raw, onOpen, selected = false }) {
   const hasMedia = Boolean(item.media) && ['image', 'video', 'web'].includes(item.kind)
   const lines = hash(item.id) % 2 === 0
 
+  const isDrafted = drafted || item.production?.status === 'done'
+  const formatLabel = draftFormat || item.production?.format
   return (
     <article
       className={`md-card kind-${item.kind} ${inverted ? 'is-inverted' : ''} ${item.status === 'published' ? 'is-published' : ''} ${selected ? 'is-selected' : ''}`}
@@ -82,7 +86,7 @@ export function Card({ item: raw, onOpen, selected = false }) {
       <footer className="md-card-foot">
         <span className={`md-dot status-${item.status}`} title={t(STATUS_LABEL[item.status])} />
         <span className="md-card-source">{item.kind === 'web' && item.url ? hostOf(item.url) : item.source || t(KIND_LABEL[item.kind])}</span>
-        <span className="md-card-time">{running ? <span className="md-shimmer">{t('正在成稿')}</span> : item.production?.status === 'done' ? t('已成稿') : item.scheduledAt && item.status !== 'published' ? relativeDay(item.scheduledAt) : ''}</span>
+        <span className="md-card-time">{running ? <span className="md-shimmer">{t('正在成稿')}</span> : isDrafted ? `${t('已成稿')}${formatLabel && FORMAT_LABEL[formatLabel] ? ` · ${t(FORMAT_LABEL[formatLabel])}` : ''}` : item.scheduledAt && item.status !== 'published' ? relativeDay(item.scheduledAt) : ''}</span>
       </footer>
     </article>
   )

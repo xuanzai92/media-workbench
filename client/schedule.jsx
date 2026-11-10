@@ -1,6 +1,6 @@
 // 排期：发布排期和灵感日历是同一张日历。每天一张灵感邮票，发布的内容从右边拖上来。
 import React from 'react'
-import { dispatchOps, openItem, useDesk } from './desk.js'
+import { dispatchOps, openItem, openMergedItem, useDesk } from './desk.js'
 import { lang, t, useLang } from './i18n.js'
 import { Stamp, useDayMap } from './stamps.jsx'
 import { IconButton } from './ui.jsx'
@@ -10,6 +10,30 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 // 中文原文，显示时再翻译
 const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 const TYPE = 'text/media-workbench-item'
+
+function openScheduleItem(item) {
+  if (item._merged) openMergedItem(item.id)
+  else openItem(item.id)
+}
+
+function mergedScheduleRecord(draft, items) {
+  const sources = (draft.sourceIds ?? []).map(id => items.find(item => item.id === id)).filter(Boolean)
+  const production = draft.production ?? {}
+  return {
+    id: draft.id,
+    kind: production.format === 'video' ? 'video' : production.format === 'image_text' ? 'image' : 'note',
+    title: production.title || draft.title || t('合并成稿'),
+    body: production.article || sources.map(item => item.body || item.title).join('\n\n'),
+    source: t('合并成稿'),
+    status: draft.status ?? 'draft',
+    scheduledAt: draft.scheduledAt ?? null,
+    platform: draft.platform ?? null,
+    createdAt: draft.createdAt,
+    production,
+    sourceIds: draft.sourceIds ?? [],
+    _merged: true,
+  }
+}
 
 function startDrag(event, id) {
   event.dataTransfer.setData(TYPE, id)
@@ -34,7 +58,7 @@ function Thumb({ item }) {
 function Chip({ item }) {
   const shown = displayItem(item)
   return (
-    <button type="button" className={`md-cal-chip status-${item.status}`} draggable title={`${fmtTime(item.scheduledAt)} ${shown.title}`} onDragStart={event => startDrag(event, item.id)} onClick={() => openItem(item.id)}>
+    <button type="button" className={`md-cal-chip status-${item.status}`} draggable title={`${fmtTime(item.scheduledAt)} ${shown.title}`} onDragStart={event => startDrag(event, item.id)} onClick={() => openScheduleItem(item)}>
       <Thumb item={item} />
       <span className="md-cal-chip-text"><time>{fmtTime(item.scheduledAt)}</time><span>{shown.title}</span></span>
     </button>
@@ -55,7 +79,7 @@ function Calendar({ items }) {
   const byDay = React.useMemo(() => {
     const map = new Map()
     for (const item of items) {
-      if (!item.scheduledAt || item.parentId) continue
+      if (!item.scheduledAt || item.parentId || item.status === 'archived') continue
       const key = dayKey(item.scheduledAt)
       if (!map.has(key)) map.set(key, [])
       map.get(key).push(item)
@@ -124,7 +148,7 @@ function TrayCard({ item }) {
   const shown = displayItem(item)
   const poster = posterOf(shown)
   return (
-    <button type="button" draggable className="md-tray-card" onDragStart={event => startDrag(event, item.id)} onClick={() => openItem(item.id)}>
+    <button type="button" draggable className="md-tray-card" onDragStart={event => startDrag(event, item.id)} onClick={() => openScheduleItem(item)}>
       <span className={`md-tray-cover ${poster ? '' : 'is-type'}`}>
         {poster ? <img src={poster} alt="" loading="lazy" draggable={false} /> : <b>{item.production?.coverText ?? shown.title}</b>}
       </span>
@@ -135,15 +159,15 @@ function TrayCard({ item }) {
 
 function Rail({ items }) {
   const [over, setOver] = React.useState(false)
-  const upcoming = items.filter(i => i.scheduledAt && i.status !== 'published' && new Date(i.scheduledAt) >= new Date()).sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt))
+  const upcoming = items.filter(i => i.scheduledAt && !['published', 'archived'].includes(i.status) && new Date(i.scheduledAt) >= new Date()).sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt))
   const next = upcoming[0]
-  const waiting = items.filter(i => !i.scheduledAt && !i.parentId && i.status !== 'published')
+  const waiting = items.filter(i => !i.scheduledAt && !i.parentId && !['published', 'archived'].includes(i.status))
   const ready = waiting.filter(i => i.production?.status === 'done').sort((a, b) => Date.parse(b.production.finishedAt ?? b.createdAt) - Date.parse(a.production.finishedAt ?? a.createdAt))
   const ideas = waiting.filter(i => i.production?.status !== 'done')
   return (
     <aside className="md-rail-col">
       {next ? (
-        <button type="button" className="md-next" onClick={() => openItem(next.id)}>
+        <button type="button" className="md-next" onClick={() => openScheduleItem(next)}>
           <span className="md-next-top"><span>{t('下一条')}</span><span>{relativeDay(next.scheduledAt)}</span></span>
           <b>{fmtTime(next.scheduledAt)}</b>
           <p>{displayItem(next).title}</p>
@@ -174,7 +198,7 @@ function Rail({ items }) {
           {!ready.length && !ideas.length ? <p className="md-tray-empty">{t('记下灵感或做好稿子后，从这里拖到日历上。')}</p> : null}
           <div className="md-tray-list">
             {ideas.map(item => (
-              <button type="button" key={item.id} draggable className="md-tray-item" onDragStart={event => startDrag(event, item.id)} onClick={() => openItem(item.id)}>
+              <button type="button" key={item.id} draggable className="md-tray-item" onDragStart={event => startDrag(event, item.id)} onClick={() => openScheduleItem(item)}>
                 <Thumb item={item} />
                 <span>{item.title}</span>
               </button>
@@ -189,11 +213,16 @@ function Rail({ items }) {
 export function ScheduleView() {
   useLang()
   const items = useDesk(s => s.state.items)
+  const mergedDrafts = useDesk(s => s.state?.mergedDrafts ?? [])
+  const contentItems = React.useMemo(() => [
+    ...items,
+    ...mergedDrafts.filter(draft => draft.production?.status === 'done').map(draft => mergedScheduleRecord(draft, items)),
+  ], [items, mergedDrafts])
   return (
     <div className="md-board-page">
       <div className="md-schedule">
-        <Calendar items={items} />
-        <Rail items={items} />
+        <Calendar items={contentItems} />
+        <Rail items={contentItems} />
       </div>
     </div>
   )

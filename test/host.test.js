@@ -426,11 +426,33 @@ test('Producer 合并多条灵感只生成一份指定形式的成稿', async ()
     assert.equal(merged.production.format, 'article')
     assert.equal(merged.production.status, 'done')
     assert.equal(merged.production.cover, null)
-    assert.deepEqual(merged.production.images, [])
+    assert.equal(merged.production.images.length, 1)
+    assert.equal(merged.production.images[0].status, 'done')
     assert.deepEqual(merged.production.shots, [])
-    assert.equal(generated, 0)
+    assert.equal(generated, 1)
     assert.ok(systems.some(text => text.includes('多条灵感素材融合') && text.includes('seed_2') && text.includes('seed_3')))
     assert.equal(state.items.find(row => row.id === 'seed_2').production, undefined)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('Producer 合并稿切换形式时复用原稿，不新增合并节点', async () => {
+  const callText = async ({ system }) => (isPlan(system)
+    ? { text: PLAN, model: 'd' }
+    : { text: '# 合并稿标题\n\n## 共同观点\n正文', model: 'd' })
+  const { dir, store, producer } = await producerFixture({ callText, generate: async () => ({ buffer: PNG, ext: '.png' }) })
+  try {
+    const id = await producer.startMerge(['seed_2', 'seed_3'], { format: 'article' })
+    await waitDone(producer, id)
+    const switchedId = await producer.startMerge(['seed_2', 'seed_3'], { format: 'video', draftId: id })
+    assert.equal(switchedId, id)
+    await waitDone(producer, id)
+    const state = await store.read()
+    assert.equal(state.mergedDrafts.length, 1)
+    assert.equal(state.mergedDrafts[0].id, id)
+    assert.equal(state.mergedDrafts[0].production.format, 'video')
+    assert.equal(state.mergedDrafts[0].production.status, 'done')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -722,6 +744,23 @@ test('RedFox：客户端带 API Key、解析错误码并隐藏密钥', async () 
   await assert.rejects(failing.request('/story/api/test', {}), /API Key 无效/)
 })
 
+test('RedFox：关键词按平台搜索并可作为外部引用导入', async () => {
+  const { importSearchPosts, searchPosts } = await import('../src/redfox.js')
+  const calls = []
+  const client = { request: async (path, body) => {
+    calls.push([path, body])
+    return { list: [{ workId: 'search-1', title: 'AI 搜索结果', content: '补充正文', workUrl: 'https://example.com/post' }] }
+  } }
+  const posts = await searchPosts('AI', ['抖音'], client)
+  assert.equal(calls[0][0], '/story/api/dyData/searchArticle')
+  assert.equal(calls[0][1].keyword, 'AI')
+  assert.equal(posts[0].platform, '抖音')
+  const draft = { items: [] }
+  const refs = importSearchPosts(draft, { posts })
+  assert.equal(refs[0].imported, true)
+  assert.equal(refs[0].title, 'AI 搜索结果')
+})
+
 test('RedFox：统一账号资料和作品字段，重复导入只更新数字', async () => {
   const { fetchAccount, importPosts, postsToMaterial } = await import('../src/redfox.js')
   const calls = []
@@ -788,6 +827,21 @@ test('排期：排上日历就是待发布，取消排期退回草稿，已发�
   assert.equal(done.status, 'published')
   const [media] = applyOps(state, [{ op: 'add_item', kind: 'image', media: { src: 'media-workbench/files/x.png' } }]).receipts
   assert.match(state.items.find(row => row.id === media.target).title, /的图片$/)
+})
+
+test('合并成稿支持保存画布位置', () => {
+  const state = seed()
+  state.mergedDrafts.push({
+    id: 'md_canvas_position',
+    title: '合并成稿',
+    sourceIds: ['seed_2', 'seed_3'],
+    status: 'draft',
+    scheduledAt: null,
+    platform: null,
+    production: { status: 'done', format: 'article', title: '合并成稿', article: '正文' },
+  })
+  applyOps(state, [{ op: 'update_item', id: 'md_canvas_position', pos: { x: 240, y: -80, r: 0 } }])
+  assert.deepEqual(state.mergedDrafts[0].pos, { x: 240, y: -80, r: 0 })
 })
 
 test('生图被限流（429）时会等一会儿再试，最多三次', async () => {

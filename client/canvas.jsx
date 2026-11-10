@@ -119,7 +119,7 @@ function Hero() {
   )
 }
 
-function Node({ item, pos, index, entered, onOpen, tone, selected }) {
+function Node({ item, pos, index, entered, onOpen, tone, selected, drafted, draftFormat }) {
   const ref = React.useRef(null)
   React.useLayoutEffect(() => {
     if (entered.current.has(item.id)) return
@@ -134,10 +134,56 @@ function Node({ item, pos, index, entered, onOpen, tone, selected }) {
   }, [entered, index, item.id, pos.x, pos.y])
   const size = cardSize(item)
   return (
-    <div ref={ref} className={`md-node${tone ? ` is-${tone}` : ''}${selected ? ' is-selected' : ''}`} data-node={item.id} style={{ left: pos.x, top: pos.y, width: size.w, '--r': `${pos.r ?? 0}deg`, '--d': pos.d ?? 0 }}>
-      <div className="md-pop"><Card item={item} onOpen={onOpen} selected={selected} /></div>
+    <div ref={ref} className={`md-node${item._merged ? ' is-merged' : ''}${tone ? ` is-${tone}` : ''}${selected ? ' is-selected' : ''}`} data-node={item.id} style={{ left: pos.x, top: pos.y, width: size.w, '--r': `${pos.r ?? 0}deg`, '--d': pos.d ?? 0 }}>
+      <div className="md-pop"><Card item={item} onOpen={onOpen} selected={selected} drafted={drafted} draftFormat={draftFormat} /></div>
     </div>
   )
+}
+
+/** 把合并成稿和来源灵感连起来。线条放在节点下面，点击节点仍由卡片处理。 */
+function RelationLinks({ groups, byId, positionOf, activeIds, visibleIds }) {
+  const lines = []
+  for (const group of groups) {
+    const draft = byId.get(group.draftId)
+    const draftPos = draft ? positionOf(draft) : null
+    if (!draftPos || !visibleIds.has(group.draftId)) continue
+    for (const sourceId of group.sourceIds) {
+      const source = byId.get(sourceId)
+      const sourcePos = source ? positionOf(source) : null
+      if (!sourcePos || !visibleIds.has(sourceId)) continue
+      const midX = (sourcePos.x + draftPos.x) / 2
+      const active = activeIds?.includes(group.draftId) && activeIds.includes(sourceId)
+      lines.push(
+        <path
+          key={`${group.draftId}:${sourceId}`}
+          className={active ? 'is-active' : undefined}
+          d={`M ${sourcePos.x} ${sourcePos.y} C ${midX} ${sourcePos.y}, ${midX} ${draftPos.y}, ${draftPos.x} ${draftPos.y}`}
+        />,
+      )
+    }
+  }
+  if (!lines.length) return null
+  return <svg className="md-links" aria-hidden="true">{lines}</svg>
+}
+
+function mergedCanvasItem(draft, source) {
+  const base = source ?? { id: draft.id, title: draft.title || t('合并成稿'), body: '', kind: 'note', status: 'draft', createdAt: draft.createdAt }
+  const production = draft.production
+  const format = production?.format ?? 'video'
+  return {
+    ...base,
+    id: draft.id,
+    title: production?.title || draft.title || t('合并成稿'),
+    source: t('合并成稿'),
+    status: 'draft',
+    createdAt: draft.createdAt || base.createdAt,
+    production,
+    sourceIds: draft.sourceIds ?? [],
+    ...(draft.pos ? { pos: draft.pos } : {}),
+    _merged: true,
+    // 让输出形式筛选对合并成稿也有意义；已完成的图文会由 displayItem 显示封面。
+    kind: format === 'video' ? 'video' : format === 'image_text' ? 'image' : 'note',
+  }
 }
 
 function originOf(event) {
@@ -147,6 +193,7 @@ function originOf(event) {
 
 function Scatter() {
   const items = useDesk(s => s.state.items)
+  const mergedDrafts = useDesk(s => s.state?.mergedDrafts ?? [])
   const stageRef = React.useRef(null)
   const worldRef = React.useRef(null)
   const { cam, flyTo, halt } = useCamera(stageRef, worldRef)
@@ -159,7 +206,40 @@ function Scatter() {
   const selectedIds = useDesk(s => s.selectedIds)
   const related = useDesk(s => s.related)
   const roots = React.useMemo(() => items.filter(isIdea), [items])
-  const shown = React.useMemo(() => roots.filter(i => kind === 'all' || displayItem(i).kind === kind), [roots, kind])
+  const mergedNodes = React.useMemo(() => mergedDrafts
+    .filter(draft => draft?.production?.status === 'running' || draft?.production?.status === 'done')
+    // 防御旧数据里误用 item id 的情况：同一个 id 只保留原灵感节点。
+    .filter(draft => !items.some(item => item.id === draft.id))
+    .map(draft => mergedCanvasItem(draft, items.find(item => draft.sourceIds?.includes(item.id)))), [items, mergedDrafts])
+  const allNodes = React.useMemo(() => [...roots, ...mergedNodes], [mergedNodes, roots])
+  const shown = React.useMemo(() => allNodes.filter(i => kind === 'all' || displayItem(i).kind === kind), [allNodes, kind])
+  const allById = React.useMemo(() => new Map(allNodes.map(item => [item.id, item])), [allNodes])
+  const visibleIds = React.useMemo(() => new Set(shown.map(item => item.id)), [shown])
+  const linkGroups = React.useMemo(() => {
+    const merged = mergedNodes
+      .map(draft => ({ draftId: draft.id, sourceIds: [...new Set(draft.sourceIds ?? [])] }))
+      .filter(group => group.sourceIds.length)
+    // 单篇成稿仍复用原 item 节点；如果未来 sourceIds 包含额外来源，直接把这条
+    // item 当作成稿端点连过去，避免为了连线再复制一张同 id 的卡片。
+    const single = roots
+      .filter(item => ['running', 'done'].includes(item.production?.status))
+      .map(item => ({ draftId: item.id, sourceIds: [...new Set((item.production?.sourceIds ?? []).filter(id => id !== item.id))] }))
+      .filter(group => group.sourceIds.length)
+    return [...merged, ...single]
+  }, [mergedNodes, roots])
+  const draftedSourceIds = React.useMemo(() => new Set(linkGroups
+    .filter(group => allById.get(group.draftId)?.production?.status === 'done')
+    .flatMap(group => group.sourceIds)), [allById, linkGroups])
+  const draftFormatBySource = React.useMemo(() => {
+    const map = new Map()
+    for (const group of linkGroups) {
+      const draft = allById.get(group.draftId)
+      if (draft?.production?.status !== 'done' || !draft.production.format) continue
+      for (const sourceId of group.sourceIds) if (!map.has(sourceId)) map.set(sourceId, draft.production.format)
+    }
+    return map
+  }, [allById, linkGroups])
+  const [linkFocus, setLinkFocus] = React.useState(null)
   const rootKey = roots.map(i => `${i.id}:${i.pos ? `${i.pos.x},${i.pos.y}` : ''}:${i.production?.cover?.src ?? ''}`).join('|')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const layout = React.useMemo(() => scatterLayout(roots), [rootKey])
@@ -170,7 +250,9 @@ function Scatter() {
     return relatedLayout(related.ids.filter(id => byId.has(id)).map(id => ({ id, ...cardSize(byId.get(id)) })))
   }, [related, roots])
 
-  const posOf = React.useCallback((item) => {
+  // 来源节点的位置逻辑独立出来，合并成稿的位置可以围绕它们计算，避免相互依赖。
+  const sourcePosOf = React.useCallback((item) => {
+    if (!item) return { x: 0, y: 0, r: 0, d: 0 }
     if (dragPos.current[item.id]) return dragPos.current[item.id]
     if (related) {
       // 相关的围在中间那句话四周，刚记下的那条放在正上方，不被底部工具条挡住
@@ -181,6 +263,47 @@ function Scatter() {
     if (item.pos) return { d: 0, ...item.pos }
     return layout[item.id] ?? { x: 0, y: 0, r: 0, d: 0 }
   }, [layout, related, relatedSpots])
+
+  const mergeSpots = React.useMemo(() => {
+    const spots = {}
+    for (const [index, draft] of mergedNodes.entries()) {
+      if (draft.pos) {
+        spots[draft.id] = { d: 0, ...draft.pos }
+        continue
+      }
+      const points = draft.sourceIds.map(id => {
+        const source = allById.get(id)
+        return source ? sourcePosOf(source) : null
+      }).filter(Boolean)
+      const center = points.length
+        ? points.reduce((sum, point) => ({ x: sum.x + point.x / points.length, y: sum.y + point.y / points.length }), { x: 0, y: 0 })
+        : { x: 320, y: 0 }
+      // 把成稿放在来源右侧，留出一段线条和卡片间距。
+      // 多次合并同一组来源时，按稳定顺序错开，避免成稿卡片互相遮住。
+      const offsetY = (index % 5 - 2) * 180
+      spots[draft.id] = { x: center.x + 300, y: center.y + offsetY, r: 0, d: 0 }
+    }
+    return spots
+  }, [allById, mergedNodes, sourcePosOf])
+
+  const posOf = React.useCallback((item) => mergeSpots[item?.id] ?? sourcePosOf(item), [mergeSpots, sourcePosOf])
+
+  const linkIdsFor = React.useCallback((id) => {
+    const ids = new Set([id])
+    let changed = true
+    // 共享来源的多个合并稿也属于同一组，递归合并直到稳定。
+    while (changed) {
+      changed = false
+      for (const group of linkGroups) {
+        if (!group.sourceIds.some(sourceId => ids.has(sourceId)) && !ids.has(group.draftId)) continue
+        if (!ids.has(group.draftId)) { ids.add(group.draftId); changed = true }
+        for (const sourceId of group.sourceIds) {
+          if (!ids.has(sourceId)) { ids.add(sourceId); changed = true }
+        }
+      }
+    }
+    return [...ids]
+  }, [linkGroups])
 
   // 拉出相关卡片后，镜头缩放到能把它们和中间那句话一起装下
   React.useEffect(() => {
@@ -200,6 +323,7 @@ function Scatter() {
   }, [relatedSpots, related?.newId])
 
   const toneOf = (item) => {
+    if (linkFocus) return linkFocus.includes(item.id) ? 'related' : 'dim'
     if (!related) return null
     if (item.id === related.newId || related.ids.includes(item.id)) return 'related'
     return 'dim'
@@ -268,9 +392,16 @@ function Scatter() {
       toggleItemSelection(item.id)
       return
     }
+    const linked = linkIdsFor(item.id)
+    setLinkFocus(linked.length > 1 ? linked : null)
     if (selectedIds.length) clearItemSelection()
-    openItem(item.id, originOf(event))
-  }, [selectedIds.length])
+    if (item._merged) {
+      // 合并稿节点需要走合并工作区；来源节点始终进入自己的灵感详情。
+      setDesk({ focusId: item.id, focusIds: [item.id], selectedIds: [], mergedId: item.id, outputFormat: null, sheetOrigin: originOf(event) })
+    } else {
+      openItem(item.id, originOf(event))
+    }
+  }, [allById, linkIdsFor, selectedIds.length])
 
   const onPointerDown = (event) => {
     if (event.button !== 0 || event.target.closest('input,textarea,button:not(.md-card),.md-toolrow,.md-ministamps')) return
@@ -283,7 +414,9 @@ function Scatter() {
     halt()
     if (cardEl) {
       const id = cardEl.dataset.node
-      const origin = posOf(items.find(i => i.id === id))
+      const dragItem = allById.get(id)
+      if (!dragItem) return
+      const origin = posOf(dragItem)
       const onMove = (e) => {
         const dx = (e.clientX - startX) / c.s
         const dy = (e.clientY - startY) / c.s
@@ -394,7 +527,11 @@ function Scatter() {
       ref={stageRef}
       onPointerDown={onPointerDown}
       onFocus={onFocusIn}
-      onKeyDown={(event) => { if (event.key === 'Escape' && related) setDesk({ related: null }) }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return
+        if (related) setDesk({ related: null })
+        if (linkFocus) setLinkFocus(null)
+      }}
       onDragOver={e => e.preventDefault()}
       onDrop={(event) => {
         event.preventDefault()
@@ -404,7 +541,8 @@ function Scatter() {
     >
       <div className="md-world" ref={worldRef}>
         <div className="md-hero-anchor"><Hero /></div>
-        {shown.map((item, index) => <Node key={item.id} item={item} pos={posOf(item)} index={index} entered={entered} onOpen={openCard} tone={toneOf(item)} selected={selectedIds.includes(item.id)} />)}
+        <RelationLinks groups={linkGroups} byId={allById} positionOf={posOf} activeIds={linkFocus} visibleIds={visibleIds} />
+        {shown.map((item, index) => <Node key={item.id} item={item} pos={posOf(item)} index={index} entered={entered} onOpen={openCard} tone={toneOf(item)} selected={selectedIds.includes(item.id)} drafted={draftedSourceIds.has(item.id)} draftFormat={item._merged ? item.production?.format : draftFormatBySource.get(item.id)} />)}
       </div>
       <div className="md-toolrow md-toolrow-right" onPointerDown={e => e.stopPropagation()}>
         <IconButton icon="zoomOut" label={t('缩小')} onClick={() => zoomAt(0.8, ...center(), false)} />
@@ -418,9 +556,21 @@ function Scatter() {
 /** 信息流：原来的瀑布流卡片，按时间从新到旧排。 */
 function Feed() {
   const items = useDesk(s => s.state.items)
+  const mergedDrafts = useDesk(s => s.state?.mergedDrafts ?? [])
   const kind = useDesk(s => s.kindFilter)
   const selectedIds = useDesk(s => s.selectedIds)
   const related = useDesk(s => s.related)
+  const draftedSourceIds = React.useMemo(() => new Set(mergedDrafts
+    .filter(draft => draft.production?.status === 'done')
+    .flatMap(draft => draft.sourceIds ?? [])), [mergedDrafts])
+  const draftFormatBySource = React.useMemo(() => {
+    const map = new Map()
+    for (const draft of mergedDrafts) {
+      if (draft.production?.status !== 'done' || !draft.production.format) continue
+      for (const sourceId of draft.sourceIds ?? []) if (!map.has(sourceId)) map.set(sourceId, draft.production.format)
+    }
+    return map
+  }, [mergedDrafts])
   const rank = id => (related ? related.ids.indexOf(id) : -1)
   const sorted = React.useMemo(() => items
     .filter(i => isIdea(i) && (kind === 'all' || displayItem(i).kind === kind))
@@ -438,7 +588,7 @@ function Feed() {
       <div className="md-wall">
         {sorted.map((item, index) => (
           <div key={item.id} className={`md-wall-cell${rank(item.id) >= 0 ? ' is-related' : ''}`} style={{ animationDelay: `${Math.min(index * 22, 400)}ms` }}>
-            <Card item={item} selected={selectedIds.includes(item.id)} onOpen={(row, event) => {
+            <Card item={item} selected={selectedIds.includes(item.id)} drafted={draftedSourceIds.has(item.id)} draftFormat={draftFormatBySource.get(item.id)} onOpen={(row, event) => {
               if (event.metaKey || event.ctrlKey) {
                 toggleItemSelection(row.id)
                 return

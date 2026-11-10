@@ -2,17 +2,21 @@
 import React from 'react'
 import { ChatPanel } from './chat.jsx'
 import { downloadCover } from './cover.js'
-import { cancelProduce, closeItem, dispatchOps, regenAsset, revealSaved, runProduce, runProduceMerge, saveProduced, setDesk, toast, useDesk, watchProduction } from './desk.js'
+import { cancelProduce, closeItem, dispatchOps, openItem, regenAsset, revealSaved, runProduce, runProduceMerge, saveProduced, searchRedfox, setDesk, toast, useDesk, watchProduction } from './desk.js'
 import { plural, t } from './i18n.js'
 import { Icon, IconButton } from './ui.jsx'
-import { SPRING_SNAP, SPRING_SOFT, STYLE_CATEGORIES, fmtDate, fmtWhen, reducedMotion, renderMarkdown, styleIcon, textLength, toLocalInput } from './util.js'
+import { PLATFORMS, SPRING_SNAP, SPRING_SOFT, STYLE_CATEGORIES, fmtDate, fmtWhen, reducedMotion, renderMarkdown, styleIcon, textLength, toLocalInput } from './util.js'
 
 const isBusy = asset => ['pending', 'running'].includes(asset?.status)
 const OUTPUT_FORMATS = [
-  { id: 'image_text', label: '图文', hint: '文章 + 图片' },
-  { id: 'article', label: '文章', hint: '只要文字' },
+  { id: 'image_text', label: '图文', hint: '短篇内容 + 图片' },
+  { id: 'article', label: '文章', hint: '完整文章 + 图片' },
   { id: 'video', label: '视频脚本', hint: '文章 + 封面 + 分镜' },
 ]
+
+function outputFormatLabel(format) {
+  return t(OUTPUT_FORMATS.find(option => option.id === format)?.label || format || '文章')
+}
 
 function OutputFormatPicker({ value, onChange, disabled = false }) {
   return (
@@ -42,6 +46,59 @@ function StylePicker({ disabled = false }) {
       </select>
     </label>
   )
+}
+
+function ReferenceSourcePicker({ value = [], onChange, disabled = false }) {
+  const settings = useDesk(s => s.settings)
+  const [enabled, setEnabled] = React.useState(value.length > 0)
+  const [keyword, setKeyword] = React.useState('')
+  const [query, setQuery] = React.useState('')
+  const [platforms, setPlatforms] = React.useState([])
+  const [results, setResults] = React.useState([])
+  const [searching, setSearching] = React.useState(false)
+  // RedFox 支持的平台固定展示；没有本地导入内容的平台也可以直接搜索。
+  const availablePlatforms = React.useMemo(() => PLATFORMS.filter(platform => ['公众号', '小红书', '抖音', 'B站', '视频号', 'TikTok', 'Instagram', 'YouTube', 'X'].includes(platform)), [])
+  const selectedIds = React.useMemo(() => new Set(value.map(item => item.id)), [value])
+  const togglePlatform = platform => setPlatforms(current => current.includes(platform) ? current.filter(row => row !== platform) : [...current, platform])
+  const toggleResult = item => onChange(selectedIds.has(item.id) ? value.filter(row => row.id !== item.id) : [...value, item].slice(-8))
+  const submit = async event => {
+    event.preventDefault()
+    const next = keyword.trim()
+    if (!next || searching) return
+    setQuery(next)
+    setSearching(true)
+    const data = await searchRedfox({ keyword: next, platforms })
+    setSearching(false)
+    if (data) setResults(data.results ?? [])
+  }
+  const toggleEnabled = event => {
+    const next = event.target.checked
+    setEnabled(next)
+    if (!next) onChange([])
+  }
+  return <section className="md-reference-pick">
+    <label className="md-reference-toggle">
+      <input type="checkbox" checked={enabled} disabled={disabled} onChange={toggleEnabled} />
+      <span>{t('是否引用其他内容源')}</span>
+    </label>
+    {enabled ? <div className="md-reference-body">
+      <p className="md-reference-note">{settings?.redfox?.hasKey ? t('使用已配置的 RedFox 内容源，搜索后选择要补充的内容。') : t('请先在设置里配置 RedFox，并导入内容后再搜索。')}</p>
+      <form className="md-reference-search" onSubmit={submit}>
+        <input value={keyword} disabled={disabled} onChange={event => setKeyword(event.target.value)} placeholder={t('输入关键词搜索补充内容')} aria-label={t('输入关键词搜索补充内容')} />
+        <button type="submit" className="md-pill is-small" disabled={disabled || searching || !keyword.trim()}>{searching ? t('搜索中…') : t('搜索')}</button>
+      </form>
+      {availablePlatforms.length ? <div className="md-reference-platforms" aria-label={t('搜索平台')}>
+        {availablePlatforms.map(platform => <button type="button" key={platform} className={platforms.includes(platform) ? 'is-on' : ''} disabled={disabled} onClick={() => togglePlatform(platform)}>{t(platform)}</button>)}
+      </div> : null}
+      {query ? <div className="md-reference-results">
+        {results.length ? results.map(item => <button type="button" key={item.id} className={`md-reference-result ${selectedIds.has(item.id) ? 'is-on' : ''}`} disabled={disabled} onClick={() => toggleResult(item)}>
+          <span><strong>{item.title}</strong><small>{item.platform ? `${t(item.platform)} · ` : ''}{item.source || t('RedFox 内容')}</small></span>
+          <b>{selectedIds.has(item.id) ? t('已添加') : t('添加')}</b>
+        </button>) : <p className="md-reference-empty">{t('没有找到匹配的 RedFox 内容')}</p>}
+      </div> : null}
+      {value.length ? <div className="md-reference-selected"><span>{t('已补充 {n} 条内容', { n: value.length })}</span>{value.map(item => <button type="button" key={item.id} disabled={disabled} onClick={() => toggleResult(item)}>{item.title}<Icon name="close" size={11} /></button>)}</div> : null}
+    </div> : null}
+  </section>
 }
 
 function unescapeJson(text) {
@@ -90,17 +147,23 @@ function Plate({ asset, paper = false, mark = null, alt = '', onOpen, onRetry })
 function ProgressCard({ production, live, settings }) {
   const running = production.status === 'running'
   const ready = settings?.imageReady
+  const format = production.format ?? 'video'
+  const isVideo = format === 'video'
+  const contentLabel = isVideo ? '脚本' : format === 'image_text' ? '内容' : '文章'
   const words = textLength(production.article || live?.text || '')
   const visuals = [production.cover, ...(production.images ?? [])].filter(Boolean)
   const shots = production.shots ?? []
   const count = list => list.filter(a => a.src).length
   const planned = production.stage !== 'brief'
+  const visualTotal = isVideo
+    ? visuals.length || 1 + (settings?.imageCount ?? 2)
+    : visuals.length || settings?.imageCount || 2
   const steps = [
     { label: t('标题和封面字'), done: planned, active: !planned },
-    { label: production.article ? t('脚本 {n} 字', { n: words, s: plural(words, '', 's') }) : words ? t('正在写 {n} 字', { n: words, s: plural(words, '', 's') }) : t('脚本'), done: Boolean(production.article), active: planned && !production.article },
+    { label: production.article ? t(`${contentLabel} {n} 字`, { n: words, s: plural(words, '', 's') }) : words ? t('正在写 {n} 字', { n: words, s: plural(words, '', 's') }) : t(contentLabel), done: Boolean(production.article), active: planned && !production.article },
     ...(ready ? [
-      { label: t('封面和配图 {done}/{total}', { done: count(visuals), total: visuals.length || 1 + (settings?.imageCount ?? 2) }), done: planned && visuals.length > 0 && !visuals.some(isBusy), active: visuals.some(isBusy) },
-      { label: t('分镜 {done}/{total}', { done: count(shots), total: shots.length || settings?.shotCount || 6 }), done: planned && shots.length > 0 && !shots.some(isBusy), active: shots.some(isBusy) },
+      { label: t(isVideo ? '封面和配图 {done}/{total}' : '配图 {done}/{total}', { done: count(visuals), total: visualTotal }), done: planned && visuals.length > 0 && !visuals.some(isBusy), active: visuals.some(isBusy) },
+      ...(isVideo ? [{ label: t('分镜 {done}/{total}', { done: count(shots), total: shots.length || settings?.shotCount || 6 }), done: planned && shots.length > 0 && !shots.some(isBusy), active: shots.some(isBusy) }] : []),
     ] : []),
   ]
   return (
@@ -122,6 +185,7 @@ function IdeaCard({ item, live, settings }) {
   const running = production?.status === 'running'
   const selectedFormat = useDesk(s => s.outputFormat)
   const format = selectedFormat ?? production?.format ?? 'video'
+  const [references, setReferences] = React.useState([])
   const canStart = !production || !['running', 'done'].includes(production.status) || (production.status === 'done' && selectedFormat && selectedFormat !== production.format)
   return (
     <div className="md-idea-card">
@@ -130,11 +194,12 @@ function IdeaCard({ item, live, settings }) {
       {!running ? (
         <StylePicker />
       ) : null}
+      {!running ? <ReferenceSourcePicker value={references} onChange={setReferences} /> : null}
       {!running ? <OutputFormatPicker value={format} onChange={next => setDesk({ outputFormat: next })} /> : null}
-      {canStart ? <button type="button" className="md-go" onClick={() => runProduce(item.id, { format })}>{production?.status === 'done' ? t('按此形式重新成稿') : t('确认并成稿')}</button> : null}
+      {canStart ? <button type="button" className="md-go" onClick={() => runProduce(item.id, { format, references })}>{production?.status === 'done' ? t('按此形式重新成稿') : t('确认并成稿')}</button> : null}
       {running ? <ProgressCard production={{ ...production, id: item.id }} live={live} settings={settings} /> : null}
       {production?.status === 'failed' ? <p className="md-idea-hint is-error">{production.error}</p> : null}
-      {!running && !settings?.imageReady ? <p className="md-idea-hint">{t('接入生图模型后，封面和分镜也会画好。')}<button type="button" onClick={() => setDesk({ settingsOpen: true })}>{t('去接入')}</button></p> : null}
+      {!running && !settings?.imageReady ? <p className="md-idea-hint">{t(format === 'video' ? '接入生图模型后，封面、配图和分镜会画好。' : '接入生图模型后，配图会画好。')}<button type="button" onClick={() => setDesk({ settingsOpen: true })}>{t('去接入')}</button></p> : null}
       {production?.notice ? <p className="md-idea-hint">{production.notice}</p> : null}
     </div>
   )
@@ -142,7 +207,8 @@ function IdeaCard({ item, live, settings }) {
 
 function BatchStudio({ items }) {
   const format = useDesk(s => s.outputFormat) ?? 'video'
-  const start = () => runProduceMerge(items.map(item => item.id), { format })
+  const [references, setReferences] = React.useState([])
+  const start = () => runProduceMerge(items.map(item => item.id), { format, references })
   return (
     <div className="md-studio md-batch-studio" role="dialog" aria-label={t('批量成稿')}>
       <div className="md-studio-chat">
@@ -167,6 +233,7 @@ function BatchStudio({ items }) {
                 </div>
               ))}
             </div>
+            <ReferenceSourcePicker value={references} onChange={setReferences} />
             <StylePicker />
             <OutputFormatPicker value={format} onChange={next => setDesk({ outputFormat: next })} />
             <button type="button" className="md-go" onClick={start}>{t('确认并合并成稿')}</button>
@@ -192,17 +259,28 @@ function BatchStudio({ items }) {
   )
 }
 
-function MergedIdeaCard({ draft, sources }) {
+function MergedIdeaCard({ draft, sources, onGenerate, onViewSources }) {
   const production = draft.production
   const running = production?.status === 'running'
-  const format = production?.format ?? 'video'
+  const selectedFormat = useDesk(s => s.outputFormat)
+  const format = selectedFormat ?? production?.format ?? 'video'
+  const canStart = !running && (!production || production.status !== 'done' || (selectedFormat && selectedFormat !== production.format))
   return (
     <div className="md-idea-card md-merged-idea-card">
       <span className="md-idea-label">{t('合并成稿')} · {t('已选 {n} 条灵感', { n: sources.length })}</span>
       <strong className="md-merged-title">{production?.title || draft.title}</strong>
-      <div className="md-merged-sources">{sources.map(source => <span key={source.id}>{source.title}</span>)}</div>
-      <StylePicker disabled={running} />
-      <OutputFormatPicker value={format} onChange={() => {}} disabled />
+      <section className="md-merged-source-panel">
+        <div className="md-merged-source-head">
+          <span>{t('来源灵感')} · {t('{n} 个来源', { n: sources.length })}</span>
+          <button type="button" className="md-inline-link" onClick={() => onViewSources()}>{t('在灵感画布中查看')}</button>
+        </div>
+        <div className="md-merged-sources">{sources.map(source => <button type="button" key={source.id} title={source.title} onClick={event => onViewSources(source.id, event)}>{source.title}</button>)}</div>
+      </section>
+      {production?.format ? <span className="md-merged-format">{t('当前形式')} · {outputFormatLabel(format)}</span> : null}
+      {!running ? <StylePicker /> : null}
+      {!running ? <OutputFormatPicker value={format} onChange={next => setDesk({ outputFormat: next })} /> : null}
+      {canStart ? <button type="button" className="md-go" onClick={() => onGenerate(format)}>{production?.status === 'done' ? t('按此形式重新成稿') : t('确认并合并成稿')}</button> : null}
+      {running ? <ProgressCard production={{ ...production, id: draft.id }} live={null} settings={null} /> : null}
       {production?.notice ? <p className="md-idea-hint">{production.notice}</p> : null}
     </div>
   )
@@ -212,6 +290,19 @@ function MergedStudio({ draft, sources, chatOpen }) {
   const live = useDesk(s => s.live[draft.id])
   const production = draft.production
   const running = production?.status === 'running'
+  const sourceIds = React.useMemo(() => [...new Set(sources.map(source => source.id))], [sources])
+  const viewSources = React.useCallback((sourceId = null, event = null) => {
+    if (sourceId) {
+      // 单个来源直接进入该灵感，避免先落到选择态再被画布上的连线带回合并稿。
+      const rect = event?.currentTarget?.getBoundingClientRect?.()
+      const origin = rect ? { x: rect.left, y: rect.top, w: rect.width, h: rect.height } : null
+      openItem(sourceId, origin)
+      return
+    }
+    // 合集回到散落画布：来源按相关布局平铺，保留来源与合并稿的连线。
+    setDesk({ view: 'home', mode: 'scatter', focusId: null, focusIds: [], selectedIds: [], mergedId: null, outputFormat: null, sheetOrigin: null, studioDock: false, related: { query: t('来源灵感'), ids: sourceIds, newId: null } })
+  }, [sourceIds])
+  const generate = React.useCallback((format) => runProduceMerge(draft.sourceIds, { format, draftId: draft.id, references: production?.references ?? [] }), [draft.id, draft.sourceIds, production?.references])
   const item = React.useMemo(() => ({ ...sources[0], id: draft.id, title: production?.title || draft.title, body: sources.map(source => source.body || source.title).join('\n\n'), production, sourceIds: draft.sourceIds }), [draft.id, draft.sourceIds, draft.title, production, sources])
   React.useEffect(() => {
     if (running || [production?.cover, ...(production?.images ?? []), ...(production?.shots ?? [])].some(isBusy)) return watchProduction(draft.id)
@@ -228,7 +319,7 @@ function MergedStudio({ draft, sources, chatOpen }) {
               <h2>{t('合并成稿')}</h2>
             </>
           )}
-          top={<MergedIdeaCard draft={draft} sources={sources} />}
+          top={<MergedIdeaCard draft={draft} sources={sources} onGenerate={generate} onViewSources={viewSources} />}
           suggestions={production?.status === 'done' ? DONE_SUGGESTIONS.map(row => t(row)) : []}
           placeholder={running ? t('正在成稿，马上就好') : t('想怎么改，直接说')}
           disabled={running}
@@ -337,11 +428,15 @@ function HeroTile({ item, live, onView }) {
 /** 把配图插回文章：优先放到对应小标题那一节的末尾。 */
 function ArticleBody({ production, text, onView }) {
   const sections = React.useMemo(() => text.split(/\n(?=##\s)/).map(part => ({ text: part, heading: /^##\s+(.+)/.exec(part)?.[1]?.trim() ?? '' })), [text])
-  const images = production?.images ?? []
+  const imageCount = useDesk(s => s.settings?.imageCount ?? 2)
+  // 旧的成稿可能没有保存配图规划；先按设置补出占位，避免文章结构和未来的配图位置丢失。
+  const images = production?.images?.length
+    ? production.images
+    : Array.from({ length: imageCount }, () => ({ status: 'idle', prompt: '', placeholder: true }))
   const placed = React.useMemo(() => {
     const map = new Map()
     images.forEach((image, i) => {
-      if (!image.src) return
+      if (!image || (!image.src && !image.prompt && !image.placeholder)) return
       let at = sections.findIndex(s => image.anchor && s.heading === image.anchor)
       if (at < 0) at = Math.min(sections.length - 1, Math.round(((i + 1) * sections.length) / (images.length + 1)))
       if (!map.has(at)) map.set(at, [])
@@ -357,7 +452,7 @@ function ArticleBody({ production, text, onView }) {
           <div className="md-prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(section.text) }} />
           {(placed.get(index) ?? []).map(({ image, i }) => (
             <figure key={i} className="md-article-figure">
-              <Plate asset={image} alt={image.caption} onOpen={() => onView(`image:${i}`)} />
+              <Plate asset={image} alt={image.caption || t('配图 {n}', { n: i + 1 })} mark={String(i + 1).padStart(2, '0')} onOpen={image.src ? () => onView(`image:${i}`) : undefined} />
               {image.caption ? <figcaption>{image.caption}</figcaption> : null}
             </figure>
           ))}
@@ -371,10 +466,14 @@ function ArticleTile({ item, live, open, onToggle, onView, tileRef, heading = '�
   const production = item.production
   const running = production?.status === 'running'
   const scroller = React.useRef(null)
+  const skipBlurSave = React.useRef(false)
   const [editing, setEditing] = React.useState(false)
   const [picked, setPicked] = React.useState(null)
   const article = production?.article ?? ''
   const [draft, setDraft] = React.useState(article)
+  const copyLabel = heading === '文章' ? t('复制文章') : heading === '内容' ? t('复制内容') : t('复制脚本')
+  const copiedLabel = heading === '文章' ? t('文章已复制') : heading === '内容' ? t('内容已复制') : t('脚本已复制')
+  const editorLabel = t(heading)
   React.useEffect(() => setDraft(article), [article])
   const text = article || (live?.text ?? '').replace(/^\s*#\s+.*\n?/, '')
   const streaming = running && !article
@@ -391,7 +490,7 @@ function ArticleTile({ item, live, open, onToggle, onView, tileRef, heading = '�
   }
   const copy = async () => {
     await navigator.clipboard.writeText(article)
-    toast(t('脚本已复制'))
+    toast(copiedLabel)
   }
   // 选中一段，交给助手改
   const onMouseUp = () => {
@@ -413,14 +512,31 @@ function ArticleTile({ item, live, open, onToggle, onView, tileRef, heading = '�
         <span className="md-grow" />
         {article ? (
           <>
-            {editing ? <button type="button" className="md-btn is-small" onClick={save}><Icon name="check" size={13} />{t('完成')}</button> : <IconButton icon="edit" label={t('直接修改')} onClick={() => setEditing(true)} />}
-            <IconButton icon="copy" label={t('复制脚本')} onClick={copy} />
+            {editing ? <button type="button" className="md-btn is-small" onClick={save}><Icon name="check" size={13} />{t('完成')}</button> : <IconButton icon="edit" label={t('直接修改')} onClick={() => { skipBlurSave.current = false; setEditing(true) }} />}
+            <IconButton icon="copy" label={copyLabel} onClick={copy} />
             <IconButton icon={open ? 'close' : 'expand'} label={open ? t('收起') : t('放大阅读')} onClick={onToggle} />
           </>
         ) : null}
       </header>
       {editing ? (
-        <textarea className="md-article-edit" aria-label={t('脚本')} value={draft} onChange={e => setDraft(e.target.value)} onBlur={save} />
+        <textarea className="md-article-edit" aria-label={editorLabel} value={draft} onChange={e => setDraft(e.target.value)} onBlur={() => {
+          if (skipBlurSave.current) {
+            skipBlurSave.current = false
+            return
+          }
+          save()
+        }} onKeyDown={event => {
+          if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+            event.preventDefault()
+            save()
+          }
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            skipBlurSave.current = true
+            setDraft(article)
+            setEditing(false)
+          }
+        }} />
       ) : text ? (
         <div className="md-article-scroll" ref={scroller} onMouseUp={onMouseUp} onScroll={() => setPicked(null)}>
           {open ? <ArticleBody production={production} text={text} onView={onView} /> : <div className="md-prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />}
@@ -611,7 +727,7 @@ function Sheet({ item, live, formatOverride }) {
     return (
       <main className={`md-format-sheet md-format-${format}`}>
         <section className="md-format-article" ref={el => { articleRef.current = el }}>
-          <ArticleTile item={item} live={live} heading="文章" open={false} onToggle={() => {}} onView={setViewing} tileRef={articleRef} />
+          <ArticleTile item={item} live={live} heading={format === 'image_text' ? '内容' : '文章'} open={format === 'article'} onToggle={() => {}} onView={setViewing} tileRef={articleRef} />
         </section>
         {format === 'image_text' ? <ImageTextTile item={item} onView={setViewing} /> : null}
         {viewing ? <Viewer item={item} target={viewing} onChange={setViewing} onClose={() => setViewing(null)} /> : null}

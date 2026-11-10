@@ -2,8 +2,8 @@ import { EN } from './en/index.js'
 import { lang, t } from './i18n.js'
 
 // 这些表只放中文原文，显示时再用 t() 翻译
-export const STATUSES = ['idea', 'outline', 'draft', 'ready', 'published']
-export const STATUS_LABEL = { idea: '灵感', outline: '大纲', draft: '草稿', ready: '待发布', published: '已发布' }
+export const STATUSES = ['idea', 'outline', 'draft', 'ready', 'published', 'archived']
+export const STATUS_LABEL = { idea: '灵感', outline: '大纲', draft: '草稿', ready: '待发布', published: '已发布', archived: '归档' }
 export const KIND_LABEL = { image: '图片', video: '视频', web: '网页', quote: '金句', note: '笔记' }
 export const PLATFORMS = ['公众号', '小红书', '抖音', 'B站', '视频号', 'TikTok', 'Instagram', 'YouTube', 'X']
 const OVERSEAS = new Set(['TikTok', 'Instagram', 'YouTube', 'X'])

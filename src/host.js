@@ -12,7 +12,7 @@ import { generateImage } from './images.js'
 import { generateToolImage, imageTool } from './image-tool.js'
 import { localIntent } from './intents.js'
 import { computeInsights, exportSkill, proposeRules } from './learn.js'
-import { createRedfoxClient, fetchAccount, importPosts, postsToMaterial, redfoxStatus, resolveAccount, saveCovers } from './redfox.js'
+import { createRedfoxClient, fetchAccount, importPosts, importSearchPosts, postsToMaterial, redfoxStatus, resolveAccount, saveCovers, searchPosts } from './redfox.js'
 import { applyOps, newId } from './ops.js'
 import { applyRevision, buildMergedItem, Producer } from './produce.js'
 import { publicSettings, Settings, imageReady } from './settings.js'
@@ -247,6 +247,14 @@ async function importAccountRoute(ctx, store, desk, body) {
   }
 }
 
+async function searchRedfoxRoute(store, desk, body) {
+  const settings = await desk.settings.read()
+  const client = createRedfoxClient(settings.redfox)
+  const posts = await searchPosts(body.keyword, body.platforms, client)
+  const results = await store.mutate(tr('搜索 RedFox 内容'), draft => importSearchPosts(draft, { posts }))
+  return { results, state: await store.read() }
+}
+
 async function addFromUrl(ctx, store, body) {
   const url = String(body.url || '').trim()
   const info = await harvest(url)
@@ -419,11 +427,11 @@ async function route(ctx, store, desk, req, res) {
       return json(res, 200, { state })
     }
     case 'produce': {
-      const started = await desk.producer.start(String(body.id), { format: body.format })
+      const started = await desk.producer.start(String(body.id), { format: body.format, references: body.references })
       return json(res, 200, { started, state: await store.read() })
     }
     case 'produce/merge': {
-      const id = await desk.producer.startMerge(body.sourceIds, { format: body.format })
+      const id = await desk.producer.startMerge(body.sourceIds, { format: body.format, references: body.references, draftId: body.draftId })
       return json(res, 200, { id, state: await store.read() })
     }
     case 'produce/cancel':
@@ -466,6 +474,7 @@ async function route(ctx, store, desk, req, res) {
     }
     case 'style/extract': return json(res, 200, await extractStyle(ctx, store, body))
     case 'redfox/import': return json(res, 200, await importAccountRoute(ctx, store, desk, body))
+    case 'redfox/search': return json(res, 200, await searchRedfoxRoute(store, desk, body))
     case 'settings': {
       const before = modelInfo(ctx)
       const updated = await desk.settings.update(body)

@@ -297,6 +297,74 @@ export function postsToMaterial(posts) {
   return [...posts].sort((a, b) => (b.views - a.views) || (score(b) - score(a))).map(post => (post.body && !post.body.startsWith(post.title) ? `${post.title}\n${post.body}` : post.body || post.title)).join('\n\n---\n\n')
 }
 
+const SEARCH_ENDPOINTS = {
+  '公众号': { path: '/story/api/gzhData/searchArticle', body: keyword => ({ keyword, offset: 0, sortType: '_0' }) },
+  '小红书': { path: '/story/api/xhsUser/searchArticle', body: keyword => ({ keyword, offset: 0, sortType: '0' }) },
+  '抖音': { path: '/story/api/dyData/searchArticle', body: keyword => ({ keyword, offset: 0, sortType: '0' }) },
+  'B站': { path: '/story/api/bili/data/workSearch', body: keyword => ({ keyword, page: '1', pageSize: 10, order: 'time' }) },
+  '视频号': { path: '/story/api/sphAllData/searchWork', body: keyword => ({ keyword, page: 1, size: 10 }) },
+  TikTok: { path: '/story/api/tiktok/ability/searchVideo', body: keyword => ({ keyword, offset: '0', count: '10', sortType: '0', publishTime: '0', region: 'US' }) },
+  Instagram: { path: '/story/api/ins/search', body: keyword => ({ keyword }) },
+  X: { path: '/story/api/x/search', body: keyword => ({ keyword, searchType: 'Top' }) },
+  YouTube: { path: '/story/api/youtube/searchVideo', body: keyword => ({ searchQuery: keyword }) },
+}
+
+function searchRows(data) {
+  if (Array.isArray(data)) return data
+  for (const key of ['list', 'items', 'records', 'results', 'awemeList', 'videoList', 'data']) {
+    if (Array.isArray(data?.[key])) return data[key]
+  }
+  return []
+}
+
+function searchId(row) {
+  return text(row?.workId ?? row?.awemeId ?? row?.aweme_id ?? row?.opusId ?? row?.opus_id ?? row?.bvid ?? row?.bvId ?? row?.videoId ?? row?.tweetId ?? row?.code ?? row?.mediaId ?? row?.itemId ?? row?.id, 160)
+}
+
+function normalizeSearchRows(platform, data) {
+  return searchRows(data).map(row => {
+    const id = searchId(row)
+    if (!id) return null
+    const body = text(row.content ?? row.workDesc ?? row.desc ?? row.description ?? row.text ?? row.caption ?? row.title, 4000)
+    const title = text(row.title ?? row.workTitle ?? row.videoTitle ?? row.name ?? row.desc ?? row.text ?? row.caption, 120) || firstLine(body, tr('无标题'))
+    const source = text(row.authorName ?? row.author?.nickname ?? row.author?.name ?? row.userName ?? row.nickname ?? row.user?.nickname ?? row.accountName ?? row.channelName, 120)
+    const url = httpsUrl(row.workUrl ?? row.url ?? row.shareLink ?? row.webUrl ?? row.permalink ?? row.videoUrl) ?? null
+    return { id, title, body, source, url, platform, publishedAt: dateValue(row.publishTime ?? row.publish_time ?? row.createTime ?? row.create_time ?? row.createdAt ?? row.takenAtDate), externalId: `${platform}:${id}` }
+  }).filter(Boolean).slice(0, 10)
+}
+
+export async function searchPosts(keyword, platforms, client) {
+  const value = text(keyword, 120)
+  const selected = [...new Set((Array.isArray(platforms) ? platforms : []).filter(row => SEARCH_ENDPOINTS[row]))]
+  if (!value) throw Object.assign(new Error(tr('请输入搜索关键词')), { status: 400 })
+  const targets = selected.length ? selected : Object.keys(SEARCH_ENDPOINTS)
+  const responses = await Promise.allSettled(targets.map(async platform => {
+    const endpoint = SEARCH_ENDPOINTS[platform]
+    const data = await client.request(endpoint.path, endpoint.body(value))
+    return normalizeSearchRows(platform, data)
+  }))
+  const results = responses.filter(row => row.status === 'fulfilled').flatMap(row => row.value)
+  if (!results.length) {
+    const failure = responses.find(row => row.status === 'rejected')
+    if (failure) throw failure.reason
+  }
+  return results
+}
+
+export function importSearchPosts(draft, { posts, now = new Date().toISOString() }) {
+  const results = []
+  for (const post of Array.isArray(posts) ? posts.slice(0, 40) : []) {
+    const externalId = `search:${post.platform}:${post.externalId || post.id}`
+    let item = draft.items.find(row => row.externalId === externalId)
+    if (!item) {
+      item = { id: newId('it'), kind: 'web', title: post.title, body: post.body, tags: [], status: 'published', personaIds: [], drafts: {}, createdAt: post.publishedAt || now, publishedAt: post.publishedAt || now, scheduledAt: post.publishedAt || now, platform: post.platform, url: post.url, source: post.source || tr('RedFox 内容'), media: null, imported: true, externalId }
+      draft.items.push(item)
+    }
+    results.push(item)
+  }
+  return results
+}
+
 export function redfoxStatus(settings = {}) {
   const key = settings?.apiKey ?? settings?.redfox?.apiKey
   return key ? { state: 'ready', balance: null } : { state: 'nokey' }

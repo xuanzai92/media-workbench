@@ -35,13 +35,18 @@ export function normalizePlan(plan, settings, title, format = 'video') {
     outline: (Array.isArray(plan?.outline) ? plan.outline : []).map(row => text(row, 40)).filter(Boolean).slice(0, 6),
     cover: normalized === 'video' ? text(plan?.cover, 1200) || title : '',
     characters: text(plan?.characters, 400),
-    images: normalized === 'article' ? [] : images,
+    // 图文和文章都需要配图；视频额外生成封面和分镜。
+    images,
     shots: normalized === 'video' ? shots : [],
   }
 }
 
 function findTarget(state, id) {
   return state.items.find(row => row.id === id) ?? state.mergedDrafts?.find(row => row.id === id) ?? null
+}
+
+function referenceIds(value) {
+  return [...new Set((Array.isArray(value) ? value : []).map(row => typeof row === 'string' ? row : row?.id).filter(Boolean))].slice(0, 12)
 }
 
 export function buildMergedItem(state, sourceIds, id = `merged_${sourceIds.join('_')}`) {
@@ -195,17 +200,17 @@ export class Producer {
     }, { undoable: false })
   }
 
-  async start(id, { format = 'video' } = {}) {
+  async start(id, { format = 'video', references = [] } = {}) {
     const normalized = normalizeOutputFormat(format)
     if (this.jobs.has(id)) return false
     const state = await this.store.read()
     const item = state.items.find(row => row.id === id)
     if (!item) throw Object.assign(new Error(tr('找不到这条灵感')), { status: 404 })
-    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), sourceIds: [id], format: normalized, merged: false }
+    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), sourceIds: [id], referenceIds: referenceIds(references), format: normalized, merged: false }
     this.jobs.set(id, job)
     await this.store.mutate('开始成稿', (draft) => {
       const target = draft.items.find(row => row.id === id)
-      target.production = { status: 'running', stage: 'brief', startedAt: new Date().toISOString(), title: target.title, article: '', format: normalized, sourceIds: [id], cover: null, images: [], shots: [] }
+      target.production = { status: 'running', stage: 'brief', startedAt: new Date().toISOString(), title: target.title, article: '', format: normalized, sourceIds: [id], references: job.referenceIds, cover: null, images: [], shots: [] }
       return draft
     }, { undoable: false })
     // 不等待：浏览器靠轮询拿进度
@@ -213,24 +218,30 @@ export class Producer {
     return true
   }
 
-  async startMerge(sourceIds, { format = 'video' } = {}) {
+  async startMerge(sourceIds, { format = 'video', references = [], draftId = null } = {}) {
     const normalized = normalizeOutputFormat(format)
     const ids = [...new Set((Array.isArray(sourceIds) ? sourceIds : []).filter(Boolean))].slice(0, 12)
     const state = await this.store.read()
     const sources = ids.map(id => state.items.find(row => row.id === id)).filter(Boolean)
     if (sources.length < 2) throw Object.assign(new Error(tr('至少选择两条灵感才能合并成稿')), { status: 400 })
-    const id = newId('md')
+    const reusableId = typeof draftId === 'string' && draftId && state.mergedDrafts?.some(row => row.id === draftId)
+    const id = reusableId ? draftId : newId('md')
     const item = buildMergedItem(state, sources.map(row => row.id), id)
-    await this.store.mutate('开始合并成稿', (draft) => {
+    if (!reusableId) await this.store.mutate('开始合并成稿', (draft) => {
       draft.mergedDrafts ??= []
-      draft.mergedDrafts.unshift({ id, sourceIds: item.sourceIds, title: item.title, createdAt: new Date().toISOString(), production: null })
+      draft.mergedDrafts.unshift({ id, sourceIds: item.sourceIds, title: item.title, createdAt: new Date().toISOString(), status: 'outline', scheduledAt: null, platform: null, production: null })
       return draft
     }, { undoable: false })
-    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), sourceIds: item.sourceIds, format: normalized, merged: true }
+    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), sourceIds: item.sourceIds, referenceIds: referenceIds(references), format: normalized, merged: true }
     this.jobs.set(id, job)
     await this.store.mutate('开始合并成稿', (draft) => {
       const target = draft.mergedDrafts.find(row => row.id === id)
-      target.production = { status: 'running', stage: 'brief', startedAt: new Date().toISOString(), title: item.title, article: '', format: normalized, sourceIds: item.sourceIds, cover: null, images: [], shots: [] }
+      target.sourceIds = item.sourceIds
+      target.title = item.title
+      target.status = target.status === 'archived' ? 'outline' : (target.status ?? 'outline')
+      target.scheduledAt ??= null
+      target.platform ??= null
+      target.production = { status: 'running', stage: 'brief', startedAt: new Date().toISOString(), title: item.title, article: '', format: normalized, sourceIds: item.sourceIds, references: job.referenceIds, cover: null, images: [], shots: [] }
       return draft
     }, { undoable: false })
     this.run(id, job).catch(() => {}).finally(() => this.jobs.delete(id))
@@ -246,6 +257,7 @@ export class Producer {
     // 会写到副本，轮询看到的 stage/text 永远停在初始值。
     job ??= {}
     job.sourceIds ??= [id]
+    job.referenceIds ??= []
     job.format ??= 'video'
     job.merged ??= false
     job.controller ??= new AbortController()
@@ -258,6 +270,8 @@ export class Producer {
       const state = await this.store.read()
       const snapshot = JSON.parse(JSON.stringify(state))
       const sourceItems = job.sourceIds.map(sourceId => snapshot.items.find(row => row.id === sourceId)).filter(Boolean)
+      const referenceItems = job.referenceIds.map(referenceId => snapshot.items.find(row => row.id === referenceId)).filter(row => row?.imported && !job.sourceIds.includes(row.id))
+      const promptSources = [...sourceItems, ...referenceItems]
       const item = job.merged ? buildMergedItem(snapshot, job.sourceIds, id) : sourceItems[0]
       if (!item) throw new Error(tr('找不到这条灵感'))
 
@@ -266,7 +280,7 @@ export class Producer {
 
       let plan
       try {
-        const prompts = planPrompts(snapshot, item, settings, job.format, sourceItems)
+        const prompts = planPrompts(snapshot, item, settings, job.format, promptSources)
         const { text } = await this.callText({ ...prompts, maxTokens: 3000, light: true, signal: AbortSignal.any([signal, AbortSignal.timeout(TEXT_TIMEOUT_MS)]), onText: (delta) => { job.planText += delta } })
         plan = normalizePlan(extractJson(text), settings, item.title, job.format)
       } catch (err) {
@@ -274,7 +288,7 @@ export class Producer {
         plan = backup
       }
       // 模型漏掉配图或分镜时用模板补上，流水线不能因此少一块
-      if (job.format !== 'article' && plan.images.length < settings.imageCount) plan.images = [...plan.images, ...backup.images.slice(plan.images.length)]
+      if (plan.images.length < settings.imageCount) plan.images = [...plan.images, ...backup.images.slice(plan.images.length)]
       if (job.format === 'video' && plan.shots.length < settings.shotCount) plan.shots = [...plan.shots, ...backup.shots.slice(plan.shots.length).map((row, i) => ({ ...row, no: plan.shots.length + i + 1 }))]
 
       const ready = this.ready(settings)
@@ -299,7 +313,7 @@ export class Producer {
         let notice = null
         let markdown = ''
         try {
-          const prompts = articlePrompts(snapshot, item, settings.voice, plan, job.format, sourceItems)
+          const prompts = articlePrompts(snapshot, item, settings.voice, plan, job.format, promptSources)
           const result = await this.callText({ ...prompts, maxTokens: 6000, signal: AbortSignal.any([signal, AbortSignal.timeout(TEXT_TIMEOUT_MS)]), onText: (delta) => { job.text += delta } })
           markdown = result.text
           engine = result.model
@@ -341,7 +355,7 @@ export class Producer {
         target.production.status = 'done'
         target.production.stage = 'done'
         target.production.finishedAt = new Date().toISOString()
-        if (!job.merged && ['idea', 'outline'].includes(target.status)) target.status = target.scheduledAt ? 'ready' : 'draft'
+        if (['idea', 'outline'].includes(target.status)) target.status = target.scheduledAt ? 'ready' : 'draft'
         return draft
       }, { undoable: false })
     } catch (err) {

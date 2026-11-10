@@ -89,6 +89,11 @@ export function openItem(id, origin = null) {
   setDesk({ focusId: id, focusIds: [id], selectedIds: [], mergedId: null, outputFormat: null, sheetOrigin: origin })
 }
 
+/** 打开内容页里的合并成稿，仍使用同一份 mergedDraft 数据。 */
+export function openMergedItem(id, origin = null) {
+  setDesk({ focusId: id, focusIds: [id], selectedIds: [], mergedId: id, outputFormat: null, sheetOrigin: origin })
+}
+
 export function toggleItemSelection(id) {
   setDesk((current) => {
     const selected = current.selectedIds.includes(id)
@@ -111,18 +116,18 @@ export function closeItem() {
 }
 
 /** 一键成稿。任务在 Host 里跑，这里只负责启动和看进度。 */
-export async function runProduce(id, { format = 'video' } = {}) {
+export async function runProduce(id, { format = 'video', references = [] } = {}) {
   try {
-    const data = await request('produce', { id, format })
+    const data = await request('produce', { id, format, references })
     setDesk({ state: data.state })
   } catch (err) {
     report(err)
   }
 }
 
-export async function runProduceMerge(sourceIds, { format = 'video' } = {}) {
+export async function runProduceMerge(sourceIds, { format = 'video', references = [], draftId = null } = {}) {
   try {
-    const data = await request('produce/merge', { sourceIds, format })
+    const data = await request('produce/merge', { sourceIds, format, references, draftId })
     setDesk({ state: data.state, mergedId: data.id, focusId: data.id, outputFormat: format })
     return data.id
   } catch (err) {
@@ -383,6 +388,17 @@ export async function importAccount(payload) {
   } catch (err) {
     report(err)
     return false
+  }
+}
+
+export async function searchRedfox(payload) {
+  try {
+    const data = await request('redfox/search', payload)
+    setDesk({ state: data.state })
+    return data
+  } catch (err) {
+    report(err)
+    return null
   }
 }
 

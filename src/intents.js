@@ -3,7 +3,7 @@ import { platformName, tr } from './i18n.js'
 import { fmtWhen, STATUSES } from './ops.js'
 
 const WEEK = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 日: 0, 天: 0 }
-const STATUS_WORDS = { 灵感: 'idea', 大纲: 'outline', 草稿: 'draft', 待发布: 'ready', 已发布: 'published' }
+const STATUS_WORDS = { 灵感: 'idea', 大纲: 'outline', 草稿: 'draft', 待发布: 'ready', 已发布: 'published', 归档: 'archived' }
 const CN_DIGIT = { 一: 1, 两: 2, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 十一: 11, 十二: 12 }
 const WEEK_EN = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 }
 const MONTH_EN = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
@@ -205,8 +205,8 @@ export function localIntent(state, message, { focusId, now = new Date() } = {}) 
     if (!item) return { reply: tr('告诉我要写哪一条，比如：把《标题》成稿。'), ops: [] }
     return { reply: tr('开始做《{title}》。', { title: item.title }), ops: [], actions: [{ type: 'produce', id: item.id }] }
   }
-  const EN_STATUS = /\b(?:mark|set|change|move)\b.*\b(?:as|to)\s+(?:an?\s+)?(idea|outline|draft|ready|published)\b/i.exec(text)
-  if ((m = /(?:状态)?(?:改成|改为|标记为|设为|变成)\s*(灵感|大纲|草稿|待发布|已发布)/.exec(text)) || EN_STATUS) {
+  const EN_STATUS = /\b(?:mark|set|change|move)\b.*\b(?:as|to)\s+(?:an?\s+)?(idea|outline|draft|ready|published|archived)\b/i.exec(text)
+  if ((m = /(?:状态)?(?:改成|改为|标记为|设为|变成)\s*(灵感|大纲|草稿|待发布|已发布|归档)/.exec(text)) || EN_STATUS) {
     if (!item) return { reply: tr('没找到这篇内容，可以用《标题》告诉我。'), ops: [] }
     return { reply: tr('改好了。'), ops: [{ op: 'set_status', id: item.id, status: m ? STATUS_WORDS[m[1]] : EN_STATUS[1].toLowerCase() }] }
   }

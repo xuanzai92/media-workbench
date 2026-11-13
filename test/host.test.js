@@ -15,7 +15,7 @@ import { applyOps } from '../src/ops.js'
 import { buildSeed } from '../src/seed.js'
 import { Store } from '../src/store.js'
 import { generateImage } from '../src/images.js'
-import { applyRevision, normalizePlan, Producer } from '../src/produce.js'
+import { applyRevision, buildMergedItem, normalizePlan, Producer } from '../src/produce.js'
 import { saveProduction, resolveExportDir } from '../src/export.js'
 import { chatPrompts } from '../src/ai.js'
 import { mkdir, readdir, writeFile } from 'node:fs/promises'
@@ -660,6 +660,20 @@ test('脚本提示词带上策划好的事实和口播，保证数字一致', ()
   assert.equal(normalizePlan({}, { imageCount: 0, shotCount: 0 }, '很长很长很长很长很长的标题').coverText.length, 12)
 })
 
+test('成稿提示词保留采集内容的标题、正文、平台和链接', () => {
+  const state = seed()
+  const [first, second] = state.items
+  Object.assign(first, { title: '小红书标题', body: '小红书完整正文和关键事实', source: '小红书作者', platform: '小红书', url: 'https://www.xiaohongshu.com/explore/note-1', publishedAt: '2026-11-14T08:00:00.000Z' })
+  Object.assign(second, { title: 'X 标题', body: 'X 帖子完整正文和引用', source: 'X 作者', platform: 'X', url: 'https://x.com/example/status/1', publishedAt: '2026-11-14T09:00:00.000Z' })
+  const prompts = articlePrompts(state, first, '', { title: 'T', outline: [], facts: [] }, 'article', [first, second])
+  for (const value of ['小红书标题', '小红书完整正文和关键事实', '小红书', 'https://www.xiaohongshu.com/explore/note-1', 'X 标题', 'X 帖子完整正文和引用', 'X', 'https://x.com/example/status/1']) assert.ok(prompts.user.includes(value), value)
+  assert.match(prompts.system, /标题.*正文.*完整阅读/)
+  const merged = buildMergedItem(state, [first.id, second.id], 'merged_test')
+  assert.match(merged.body, /平台：小红书/)
+  assert.match(merged.body, /链接：https:\/\/www\.xiaohongshu\.com\/explore\/note-1/)
+  assert.match(merged.body, /X 帖子完整正文和引用/)
+})
+
 test('风格预设：旧模板换成新预设，清空示例也不会删预设', async () => {
   const { STYLE_CATEGORIES, STYLE_PRESETS } = await import('../src/style-presets.js')
   for (const row of STYLE_PRESETS) {
@@ -807,9 +821,9 @@ test('RedFox：新社媒榜单使用对应接口并统一作品和账号字段',
   const calls = []
   const client = { request: async (path, body, options) => {
     calls.push({ path, body, options })
-    if (path.includes('getXhsCozeSkillData')) return { list: [{ title: '小红书爆款', userName: '笔记作者', photoJumpUrl: 'https://www.xiaohongshu.com/explore/n1', anaAdd: { addLikeCount: 12, addCommentCount: 3, addCollectedCunt: 4, addShareCount: 5 } }] }
+    if (path.includes('getXhsCozeSkillData')) return { list: [{ title: '小红书爆款', content: '完整笔记正文', userName: '笔记作者', photoJumpUrl: 'https://www.xiaohongshu.com/explore/n1', anaAdd: { addLikeCount: 12, addCommentCount: 3, addCollectedCunt: 4, addShareCount: 5 } }] }
     if (path.includes('getLowPowder')) return [{ title: '黑马笔记', userName: '黑马作者', photoId: 'note-1', useLikeCount: '2w+', useCommentCount: 2, collectedCount: 5, useShareCount: 1 }]
-    if (path.includes('/dy/search/')) return [{ accountName: '抖音作者', title: '抖音作品', workUrl: 'https://www.douyin.com/video/1', likeCount: 20, commentCount: 3, collectCount: 4, shareCount: 5 }]
+    if (path.includes('/dy/search/')) return [{ accountName: '抖音作者', title: '抖音作品', content: '完整抖音正文', workUrl: 'https://www.douyin.com/video/1', likeCount: 20, commentCount: 3, collectCount: 4, shareCount: 5 }]
     return { list: [{ rankNo: 1, fullName: 'X 作者', profileUrl: 'https://x.com/example', pictureUrl: 'https://cdn.example/avatar.jpg', xFollowerCount: 1000, xScore: 87.5, growthPercentage: '12%', countryName: '中国' }] }
   } }
   const date = '2026-11-09'
@@ -822,9 +836,13 @@ test('RedFox：新社媒榜单使用对应接口并统一作品和账号字段',
   const x = await fetchRankings({ platform: 'x', ranking: 'x_hot_accounts', date, gender: 'female' }, client)
   assert.equal(weekly.rows[0].stats.likes, 12)
   assert.equal(daily.rows[0].title, '小红书爆款')
+  assert.equal(daily.rows[0].body, '完整笔记正文')
+  assert.equal(daily.rows[0].platform, '小红书')
   assert.equal(breakout.rows[0].stats.likes, '2w+')
   assert.match(breakout.rows[0].url, /xiaohongshu\.com\/explore\/note-1$/)
   assert.equal(hot.rows[0].stats.likes, 20)
+  assert.equal(hot.rows[0].body, '完整抖音正文')
+  assert.equal(hot.rows[0].platform, '抖音')
   assert.equal(rising.rows[0].stats.comments, 3)
   assert.equal(weeklyRising.rows[0].title, '抖音作品')
   assert.equal(x.rows[0].name, 'X 作者')

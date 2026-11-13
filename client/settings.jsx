@@ -1,6 +1,6 @@
 // 设置：开放接入的生图模型和工作台目录。
 import React from 'react'
-import { saveSettings, saveWorkspace, setDesk, syncMarkdownFiles, testImage, useDesk } from './desk.js'
+import { pickWorkspace, saveSettings, saveWorkspace, setDesk, syncMarkdownFiles, testImage, useDesk } from './desk.js'
 import { t, useLang } from './i18n.js'
 import { Dialog, Icon } from './ui.jsx'
 
@@ -14,13 +14,6 @@ const PRESETS = [
   { id: 'custom', label: '其他自定义', baseUrl: '', model: '', size: '1024x1024', quality: '', extra: '' },
 ]
 
-// 中文和 English 各用自己的语言写，切错了也认得出来
-const LANGUAGES = [
-  { value: 'auto', label: () => t('跟随 DeepSeek Harness') },
-  { value: 'zh', label: () => '中文' },
-  { value: 'en', label: () => 'English' },
-]
-
 export function SettingsDialog() {
   useLang()
   const open = useDesk(s => s.settingsOpen)
@@ -32,16 +25,15 @@ export function SettingsDialog() {
   React.useEffect(() => {
     if (!open || !settings) return
     const { image } = settings
-    setForm({ source: image.source ?? 'http', language: settings.language ?? 'auto', baseUrl: image.baseUrl, model: image.model, apiKey: '', size: image.size, quality: image.quality, toolSize: image.toolSize ?? '1536x1024', toolQuality: image.toolQuality ?? '', extra: image.extra, workspaceDir: settings.workspaceDir ?? '', redfoxApiKey: '', imageCount: settings.imageCount, shotCount: settings.shotCount })
+    setForm({ source: image.source ?? 'http', baseUrl: image.baseUrl, model: image.model, apiKey: '', size: image.size, quality: image.quality, toolSize: image.toolSize ?? '1536x1024', toolQuality: image.toolQuality ?? '', extra: image.extra, workspaceDir: settings.workspaceDir ?? '', redfoxApiKey: '' })
     setSample(null)
   }, [open, settings])
   if (!open || !form) return null
   const close = () => setDesk({ settingsOpen: false })
   const set = (key, value) => setForm(f => ({ ...f, [key]: value }))
   const payload = () => ({
-    language: form.language,
     image: { source: form.source, baseUrl: form.baseUrl, model: form.model, apiKey: form.apiKey, size: form.size, quality: form.quality, toolSize: form.toolSize, toolQuality: form.toolQuality, extra: form.extra },
-    redfox: { apiKey: form.redfoxApiKey }, imageCount: Number(form.imageCount), shotCount: Number(form.shotCount),
+    redfox: { apiKey: form.redfoxApiKey },
   })
   const activePreset = PRESETS.find(p => p.baseUrl && p.baseUrl === form.baseUrl)?.id ?? (form.baseUrl ? 'custom' : null)
   return (
@@ -54,24 +46,23 @@ export function SettingsDialog() {
         if (await saveSettings(payload())) close()
       }}>
         <div className="md-field">
-          <span>{t('语言')}</span>
-          <div className="md-presets" role="radiogroup" aria-label={t('语言')}>
-            {LANGUAGES.map(option => (
-              <button type="button" key={option.value} role="radio" aria-checked={form.language === option.value} className={form.language === option.value ? 'is-on' : ''} onClick={() => set('language', option.value)}>{option.label()}</button>
-            ))}
-          </div>
-        </div>
-        <div className="md-field">
           <span>{t('工作台数据目录')}</span>
-          <input value={form.workspaceDir} onChange={e => set('workspaceDir', e.target.value)} placeholder={settings.defaultWorkspaceDir} />
-          <small>{t('状态、设置和导入的媒体会保存到这个路径；首次使用会自动创建“灵感”和“内容”子文件夹。支持绝对路径和 ~/ 开头的路径；这是 DeepSeek Harness 所在电脑上的本地目录。')}</small>
+          <div className="md-field-row md-workspace-picker">
+            <input value={form.workspaceDir || settings.defaultWorkspaceDir} readOnly aria-label={t('工作台数据目录')} />
+            <button type="button" className="md-btn" onClick={async () => {
+              const path = await pickWorkspace()
+              if (path) set('workspaceDir', path)
+            }}>{t('选择文件夹')}</button>
+          </div>
+          <small>{t('状态、设置和导入的媒体会保存到这个路径；首次使用会自动创建“外部采集”“灵感”“内容”子文件夹。支持绝对路径和 ~/ 开头的路径；这是 DeepSeek Harness 所在电脑上的本地目录。')}</small>
           <button type="button" className="md-btn" onClick={async () => {
             const path = form.workspaceDir.trim()
             if (path && path !== settings.workspaceDir && !(await saveWorkspace(path))) return
             await syncMarkdownFiles()
-          }}>{t('同步本地 Markdown')}</button>
-          <small>{t('采集灵感和生成内容会自动保存；这个按钮用于把 Obsidian 或第三方插件改过的 Markdown 导回工作台。')}</small>
-          <small>{t('同步会读取“灵感”和“内容”目录，也兼容“内容选题/作者/标题.md”这类本地选题文件；“内容选题”和“内容”下没有 frontmatter 的文件会按路径生成稳定 ID。')}</small>
+          }}>{t('同步本地 Obsidian 内容')}</button>
+          <small>{t('采集灵感和生成内容会自动保存；这个按钮会读取 Obsidian 内容，并把外部采集整理到“灵感”文件夹后导回工作台。')}</small>
+          <small>{t('同步会读取“外部采集”“灵感”和“内容”目录，也兼容“内容选题/作者/标题.md”这类本地选题文件；没有 frontmatter 或稳定 ID 的外部 Markdown 会按路径生成稳定 ID。')}</small>
+          <small>{t('“外部采集”与“灵感”位于工作台数据目录下；如果它们在项目根目录，请把工作台数据目录设置为该项目根目录。')}</small>
         </div>
         <label className="md-field">
           <span>{t('RedFox API Key')}{settings.redfox?.hasKey ? t('（已保存，末四位 {hint}）', { hint: settings.redfox.keyHint }) : ''}</span>
@@ -113,12 +104,14 @@ export function SettingsDialog() {
           <span>{t('密钥')}{settings.image.hasKey ? t('（已保存，末四位 {hint}）', { hint: settings.image.keyHint }) : ''}</span>
           <input type="password" autoComplete="off" value={form.apiKey} onChange={e => set('apiKey', e.target.value)} placeholder={settings.image.hasKey ? t('留空表示不修改') : 'sk-…'} />
           <small>{t('只保存在这台电脑上，不会写进内容数据，也不会被打包或发给模型。')}</small>
+          <button type="button" className="md-btn md-test-image" disabled={testing} onClick={async () => {
+            setTesting(true)
+            setSample(null)
+            setSample(await testImage(payload()))
+            setTesting(false)
+          }}>{testing ? <span className="md-shimmer">{t('正在试画…')}</span> : t('试画一张')}</button>
         </label>
         </> : null}
-        <div className="md-field-row">
-          <label className="md-field"><span>{t('配图数量')}</span><input type="number" min="0" max="4" value={form.imageCount} onChange={e => set('imageCount', e.target.value)} /></label>
-          <label className="md-field"><span>{t('分镜格数')}</span><input type="number" min="0" max="12" value={form.shotCount} onChange={e => set('shotCount', e.target.value)} /></label>
-        </div>
         <button type="button" className="md-advanced" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}><Icon name={advanced ? 'chevD' : 'chevR'} size={12} />{t('高级')}</button>
         {advanced ? (
           <>
@@ -137,12 +130,6 @@ export function SettingsDialog() {
         ) : null}
         {sample ? <img className="md-test-sample" src={sample} alt={t('测试图')} /> : null}
         <div className="md-form-foot">
-          <button type="button" className="md-btn" disabled={testing} onClick={async () => {
-            setTesting(true)
-            setSample(null)
-            setSample(await testImage(payload()))
-            setTesting(false)
-          }}>{testing ? <span className="md-shimmer">{t('正在试画…')}</span> : t('试画一张')}</button>
           <span style={{ flex: 1 }} />
           <button type="button" className="md-btn" onClick={close}>{t('取消')}</button>
           <button type="submit" className="md-btn is-primary">{t('保存')}</button>

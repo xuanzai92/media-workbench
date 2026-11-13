@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { importMarkdown, parseFrontmatter, removeMarkdown, syncMarkdown, writeContentMarkdown, writeInspirationMarkdown } from '../src/markdown.js'
+import { importMarkdown, organizeExternalMarkdown, parseFrontmatter, removeMarkdown, syncMarkdown, writeContentMarkdown, writeInspirationMarkdown } from '../src/markdown.js'
 import { applyOps } from '../src/ops.js'
 
 test('Markdown frontmatter 解析字符串、数组和空值', () => {
@@ -38,6 +38,37 @@ test('同步兼容内容选题目录和内容目录下的普通 Markdown', async
     assert.ok(content)
     assert.equal(content.production.article, '没有 frontmatter 也应该能导入。')
     assert.match(content.id, /^md_local_[0-9a-f]{12}$/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('同步外部采集 Markdown 为灵感，并在成功投影后移动到灵感目录', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'media-workbench-markdown-external-'))
+  try {
+    await mkdir(join(root, '外部采集', '网页'), { recursive: true })
+    await writeFile(join(root, '外部采集', '网页', '一条观察.md'), '# 一条观察\n\n这是从外部采集来的正文。\n\n## 备注\n\n保留这个区块。')
+    const state = { items: [], mergedDrafts: [] }
+    const imported = await importMarkdown(root, state, { now: '2026-11-11T12:00:00.000Z' })
+    assert.equal(imported.imported, 1)
+    assert.equal(imported.externalFiles.length, 1)
+    const item = state.items[0]
+    assert.match(item.id, /^it_external_local_[0-9a-f]{12}$/)
+    assert.equal(item.title, '一条观察')
+    assert.equal(item.body, '这是从外部采集来的正文。\n\n## 备注\n\n保留这个区块。')
+    assert.equal(item.source, '外部采集')
+    assert.equal(item.markdownMeta.external_capture, true)
+
+    const organized = await organizeExternalMarkdown(root, imported.externalFiles, state, { now: '2026-11-11T12:01:00.000Z' })
+    assert.equal(organized.organized.length, 1)
+    assert.deepEqual(organized.errors, [])
+    const target = join(root, '灵感', `${item.id}.md`)
+    assert.match(await readFile(target, 'utf8'), /source: "外部采集"/)
+    assert.match(await readFile(target, 'utf8'), /external_capture: true/)
+    await assert.rejects(readFile(join(root, '外部采集', '网页', '一条观察.md')))
+
+    const second = await importMarkdown(root, state, { now: '2026-11-11T12:02:00.000Z' })
+    assert.equal(second.externalFiles.length, 0)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -149,7 +180,7 @@ test('Markdown 投影默认跳过示例数据', async () => {
   try {
     const written = await syncMarkdown(root, { items: [{ id: 'sample_1', sample: true, title: '示例', body: '不会导出' }], mergedDrafts: [] })
     assert.deepEqual(written, [])
-    assert.deepEqual((await readdir(root)).sort(), ['内容', '灵感'])
+    assert.deepEqual((await readdir(root)).sort(), ['内容', '外部采集', '灵感'])
     await assert.rejects(readFile(join(root, '灵感', 'sample_1.md')))
   } finally {
     await rm(root, { recursive: true, force: true })

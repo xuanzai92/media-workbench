@@ -303,10 +303,13 @@ function normalizeXhsRanking(rows) {
 function normalizeXhsNoteRanking(rows) {
   return rows.map((row, index) => {
     const growth = row?.anaAdd ?? row?.stats ?? {}
+    const body = text(row?.content ?? row?.body ?? row?.workDesc ?? row?.desc ?? row?.noteContent ?? row?.title, 4000)
     return {
       rank: Number(row?.rankNo ?? row?.rank ?? row?.ranking) || index + 1,
       name: text(row?.userName ?? row?.authorName ?? row?.accountName, 100) || tr('无标题'),
       title: text(row?.title ?? row?.workTitle ?? row?.noteTitle ?? row?.desc, 180) || firstLine(row?.content, tr('无标题')),
+      body,
+      platform: '小红书',
       avatar: httpsUrl(row?.avatar ?? row?.userAvatar ?? row?.avatarUrl ?? row?.pictureUrl ?? row?.userHeadUrl),
       cover: httpsUrl(row?.coverUrl ?? row?.cover ?? row?.photoUrl),
       url: httpsUrl(row?.photoJumpUrl ?? row?.workUrl ?? row?.noteUrl ?? row?.userJumpUrl) ?? (text(row?.photoId, 120) ? `https://www.xiaohongshu.com/explore/${text(row.photoId, 120)}` : null),
@@ -329,6 +332,8 @@ function normalizeDouyinRanking(rows) {
     rank: Number(row?.rankNo ?? row?.rank) || index + 1,
     name: text(row?.user_nickname ?? row?.accountName ?? row?.authorName, 100) || tr('无标题'),
     title: text(row?.aweme_desc ?? row?.title, 180) || firstLine(row?.content, tr('无标题')),
+    body: text(row?.content ?? row?.body ?? row?.desc ?? row?.aweme_desc ?? row?.title, 4000),
+    platform: '抖音',
     avatar: httpsUrl(row?.user_avatar ?? row?.avatarUrl),
     cover: httpsUrl(row?.cover_url ?? row?.coverUrl),
     url: httpsUrl(row?.share_url ?? row?.workUrl),

@@ -212,7 +212,13 @@ function Scatter() {
     .filter(draft => !items.some(item => item.id === draft.id))
     .map(draft => mergedCanvasItem(draft, items.find(item => draft.sourceIds?.includes(item.id)))), [items, mergedDrafts])
   const allNodes = React.useMemo(() => [...roots, ...mergedNodes], [mergedNodes, roots])
-  const shown = React.useMemo(() => allNodes.filter(i => kind === 'all' || displayItem(i).kind === kind), [allNodes, kind])
+  const draftedIds = React.useMemo(() => new Set([
+    ...allNodes.filter(item => item.production?.status === 'done').map(item => item.id),
+    ...mergedDrafts.filter(draft => draft.production?.status === 'done').flatMap(draft => draft.sourceIds ?? []),
+  ]), [allNodes, mergedDrafts])
+  const shown = React.useMemo(() => allNodes.filter(item => kind === 'pending'
+    ? !draftedIds.has(item.id)
+    : kind === 'all' || displayItem(item).kind === kind), [allNodes, draftedIds, kind])
   const allById = React.useMemo(() => new Map(allNodes.map(item => [item.id, item])), [allNodes])
   const visibleIds = React.useMemo(() => new Set(shown.map(item => item.id)), [shown])
   const linkGroups = React.useMemo(() => {
@@ -571,6 +577,10 @@ function Feed() {
   const draftedSourceIds = React.useMemo(() => new Set(mergedDrafts
     .filter(draft => draft.production?.status === 'done')
     .flatMap(draft => draft.sourceIds ?? [])), [mergedDrafts])
+  const draftedIds = React.useMemo(() => new Set([
+    ...items.filter(item => item.production?.status === 'done').map(item => item.id),
+    ...draftedSourceIds,
+  ]), [draftedSourceIds, items])
   const draftFormatBySource = React.useMemo(() => {
     const map = new Map()
     for (const draft of mergedDrafts) {
@@ -581,7 +591,9 @@ function Feed() {
   }, [mergedDrafts])
   const rank = id => (related ? related.ids.indexOf(id) : -1)
   const sorted = React.useMemo(() => items
-    .filter(i => isIdea(i) && (kind === 'all' || displayItem(i).kind === kind))
+    .filter(item => isIdea(item) && (kind === 'pending'
+      ? !draftedIds.has(item.id)
+      : kind === 'all' || displayItem(item).kind === kind))
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
     // 有相关的灵感时排在最前面，按相关程度
     .sort((a, b) => {
@@ -589,7 +601,7 @@ function Feed() {
       const rb = rank(b.id)
       return (ra < 0 ? 99 : ra) - (rb < 0 ? 99 : rb)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }), [items, kind, related])
+    }), [draftedIds, items, kind, related])
   return (
     <div className="md-wall-scroll">
       <div className="md-feed-hero"><Hero /></div>
@@ -613,7 +625,7 @@ function Feed() {
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
-const KIND_OPTIONS = [{ value: 'all', label: '全部' }, { value: 'image', label: '图片' }, { value: 'video', label: '视频' }, { value: 'web', label: '网页' }, { value: 'quote', label: '金句' }, { value: 'note', label: '笔记' }]
+const KIND_OPTIONS = [{ value: 'all', label: '全部' }, { value: 'pending', label: '待成稿' }, { value: 'image', label: '图片' }, { value: 'video', label: '视频' }, { value: 'web', label: '网页' }, { value: 'quote', label: '金句' }, { value: 'note', label: '笔记' }]
 
 function SelectionBar() {
   const selectedIds = useDesk(s => s.selectedIds)

@@ -5,7 +5,7 @@ import { ChatDock } from './chat.jsx'
 import { ContentView } from './content.jsx'
 import { captureFiles, captureUrl, dispatchOps, loadDesk, setDesk, undo, useDesk } from './desk.js'
 import { InsightsView } from './insights.jsx'
-import { HotView } from './hot.jsx'
+import { HotHubView } from './hot-hub.jsx'
 import { RankingsView } from './rankings.jsx'
 import { StyleView } from './style.jsx'
 import { ScheduleView } from './schedule.jsx'
@@ -29,7 +29,7 @@ const NAV = [
   { id: 'style', label: '风格', navKey: '风格（导航）' },
 ]
 
-const VIEWS = { hot: HotView, rankings: RankingsView, home: HomeView, content: ContentView, schedule: ScheduleView, insights: InsightsView, style: StyleView }
+const VIEWS = { hot: HotHubView, rankings: RankingsView, xbangdan: HotHubView, home: HomeView, content: ContentView, schedule: ScheduleView, insights: InsightsView, style: StyleView }
 
 function CaptureDialog() {
   const capture = useDesk(s => s.capture)
@@ -120,6 +120,7 @@ function Desk() {
   const ready = useDesk(s => Boolean(s.state))
   const error = useDesk(s => s.error)
   const view = useDesk(s => s.view)
+  const navView = view === 'xbangdan' ? 'hot' : view
   const dockOpen = useDesk(s => s.dockOpen)
   const canUndo = useDesk(s => s.canUndo)
   const rootRef = React.useRef(null)
@@ -162,7 +163,7 @@ function Desk() {
         <header className="md-topbar" data-window-drag="">
           <nav className="md-nav" aria-label={t('工作台导航')}>
             {NAV.map(entry => (
-              <button type="button" key={entry.id} className={view === entry.id ? 'is-on' : ''} aria-current={view === entry.id ? 'page' : undefined} onClick={() => setDesk({ view: entry.id, focusId: null, focusIds: [], selectedIds: [], mergedId: null, outputFormat: null })}>{entry.navKey && lang() === 'en' ? t(entry.navKey) : t(entry.label)}</button>
+              <button type="button" key={entry.id} className={navView === entry.id ? 'is-on' : ''} aria-current={navView === entry.id ? 'page' : undefined} onClick={() => setDesk({ view: entry.id, focusId: null, focusIds: [], selectedIds: [], mergedId: null, outputFormat: null })}>{entry.navKey && lang() === 'en' ? t(entry.navKey) : t(entry.label)}</button>
             ))}
           </nav>
           <span style={{ flex: 1 }} />

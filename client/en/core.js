@@ -5,6 +5,7 @@ export const CORE = {
   '工作台导航': 'Desk navigation',
   '热点（导航）': 'Hot topics',
   '热点': 'Hot topics',
+  '热点来源': 'Hot topic source',
   '热点详情': 'Topic details',
   '返回热点': 'Back to hot topics',
   '灵感（导航）': 'Ideas',

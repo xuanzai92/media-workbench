@@ -112,6 +112,7 @@ const SKILLS_EN = [
 export function migrateState(state) {
   if (state.activeStyleId === undefined) state.activeStyleId = null
   if (!Array.isArray(state.mergedDrafts)) state.mergedDrafts = []
+  if (!Array.isArray(state.publishJobs)) state.publishJobs = []
   // 加入英文之前的数据都是中文示例
   if (state.sampleLang === undefined) state.sampleLang = 'zh'
   if (state.sampleLang === 'en') stashChineseLeftovers(state)
@@ -209,6 +210,7 @@ export function buildSeed(now, lang = currentLang()) {
     presetVersion: PRESET_VERSION,
     activeStyleId: null,
     mergedDrafts: [],
+    publishJobs: [],
     chat: [],
   }
   return normalizeLang(lang) === 'en' ? localizeSamples(state, 'en') : state

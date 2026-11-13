@@ -12,14 +12,16 @@ import { generateImage } from './images.js'
 import { generateToolImage, imageTool } from './image-tool.js'
 import { localIntent } from './intents.js'
 import { computeInsights, exportSkill, proposeRules } from './learn.js'
-import { ensureMarkdownDirs, importMarkdown, removeMarkdown, safeFilePart, syncMarkdown } from './markdown.js'
+import { ensureMarkdownDirs, importMarkdown, organizeExternalMarkdown, removeMarkdown, safeFilePart, syncMarkdown } from './markdown.js'
 import { createRedfoxClient, fetchAccount, fetchRankings, importPosts, importSearchPosts, postsToMaterial, redfoxStatus, resolveAccount, saveCovers, searchPosts } from './redfox.js'
 import { applyOps, newId } from './ops.js'
+import { createPublishJob, findPublishJob, isPublishJobExpired, publicPublishJob, updatePublishJob } from './publish.js'
 import { applyRevision, buildMergedItem, Producer } from './produce.js'
 import { publicSettings, Settings, imageReady } from './settings.js'
 import { normalizeStyle, stylePrompts } from './style.js'
 import { dshHome, Store } from './store.js'
 import { defaultWorkspaceDir, normalizeWorkspaceDir, readWorkspaceDir, writeWorkspaceDir } from './workspace.js'
+import { fetchXbangdan } from './xbangdan.js'
 import { currentLang, platformName, tr, withLang } from './i18n.js'
 import { localizeSamples, samplesNeedLocale } from './seed.js'
 
@@ -34,6 +36,81 @@ function json(res, status, body) {
   res.setHeader('content-type', 'application/json; charset=utf-8')
   res.setHeader('cache-control', 'no-store')
   res.end(JSON.stringify(body))
+}
+
+function html(res, status, body) {
+  res.statusCode = status
+  res.setHeader('content-type', 'text/html; charset=utf-8')
+  res.setHeader('cache-control', 'no-store')
+  res.setHeader('x-content-type-options', 'nosniff')
+  res.end(body)
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]))
+}
+
+function handoffAssetUrl(src) {
+  if (/^media-workbench\/(?:attachments|files|assets)\/[\w.-]+$/.test(src)) return `/${src}`
+  return /^https?:\/\//.test(src) ? src : ''
+}
+
+function handoffPage(job) {
+  const source = job.source ?? {}
+  const payload = JSON.stringify(publicPublishJob(job)).replace(/[<\u2028\u2029]/g, char => ({ '<': '\\u003c', '\u2028': '\\u2028', '\u2029': '\\u2029' }[char]))
+  const media = (source.media ?? []).map((entry) => {
+    const url = handoffAssetUrl(entry.src)
+    if (!url) return ''
+    return `<li><a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(entry.role)}${entry.index === undefined ? '' : ` ${entry.index + 1}`}</a></li>`
+  }).filter(Boolean).join('')
+  return `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Media Workbench · 发布交接</title>
+<style>body{font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:860px;margin:40px auto;padding:0 24px;color:#202124;background:#fafafa}main{background:white;border:1px solid #e5e7eb;border-radius:16px;padding:28px;box-shadow:0 8px 30px #0000000b}h1{font-size:24px;margin:0 0 8px}h2{font-size:16px;margin:24px 0 8px}p{white-space:pre-wrap;background:#f7f7f8;border-radius:10px;padding:14px;max-height:320px;overflow:auto}.meta{color:#6b7280;font-size:13px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}button,a.button{border:1px solid #d1d5db;border-radius:9px;background:#fff;color:#111827;padding:8px 12px;text-decoration:none;cursor:pointer}button.primary{background:#111827;color:white;border-color:#111827}ul{padding-left:20px}</style></head>
+<body><main><h1>发布交接已准备</h1><div class="meta">任务 ${escapeHtml(job.id)} · 有效至 ${escapeHtml(job.expiresAt)}</div>
+<h2>${escapeHtml(source.title)}</h2><div class="actions"><button class="primary" id="copy-title">复制标题</button><button id="copy-body">复制正文</button><button id="copy-markdown">复制 Markdown</button></div>
+<h2>正文预览</h2><p id="body">${escapeHtml(source.body)}</p>
+<h2>素材</h2><ul>${media || '<li>这条成稿没有可交接的本地素材</li>'}</ul>
+<p id="handoff-status" class="meta">正在尝试把任务交给爱贝壳；如果扩展没有响应，请直接在爱贝壳中选择平台。</p></main>
+<script>
+const payload=${payload};
+const copy=value=>navigator.clipboard?.writeText(value).then(()=>true).catch(()=>false);
+const status=document.querySelector('#handoff-status');
+document.querySelector('#copy-title').onclick=()=>copy(payload.source.title);
+document.querySelector('#copy-body').onclick=()=>copy(payload.source.body);
+document.querySelector('#copy-markdown').onclick=()=>copy(payload.source.markdown);
+window.__MEDIA_WORKBENCH_HANDOFF__=payload;
+window.__MEDIA_WORKBENCH_RETRY__=()=>{
+  if (!globalThis.chrome?.runtime?.sendMessage) { status.textContent='当前页面没有可用的扩展通信接口，请在爱贝壳中手动选择平台。'; return; }
+  try {
+    chrome.runtime.sendMessage('jejejajkcbhejfiocemmddgbkdlhhngm', { type:'media-workbench:publish', job:payload }, response => {
+      const error=chrome.runtime.lastError;
+      if (error) status.textContent='爱贝壳未接收任务，请在扩展中手动选择平台。';
+      else status.textContent=response?.status === 'received' ? '内容已交给爱贝壳，请在爱贝壳中选择平台。' : '等待爱贝壳接收任务，请在扩展中选择平台。';
+    });
+  } catch { status.textContent='爱贝壳未接收任务，请在扩展中手动选择平台。'; }
+};
+window.__MEDIA_WORKBENCH_RETRY__();
+</script></body></html>`
+}
+
+function handoffUrl(req, job) {
+  const host = req.headers.host
+  if (!host) return `/media-workbench/publish/handoff?jobId=${encodeURIComponent(job.id)}&nonce=${encodeURIComponent(job.nonce)}`
+  const forwarded = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim()
+  const protocol = forwarded || (req.socket?.encrypted ? 'https' : 'http')
+  return `${protocol}://${host}/media-workbench/publish/handoff?jobId=${encodeURIComponent(job.id)}&nonce=${encodeURIComponent(job.nonce)}`
+}
+
+function requirePublishJob(state, jobId, nonce = '') {
+  const job = findPublishJob(state, String(jobId || ''))
+  if (!job || !nonce || nonce !== job.nonce) throw Object.assign(new Error(tr('发布任务不存在')), { status: 404 })
+  if (isPublishJobExpired(job)) throw Object.assign(new Error(tr('发布任务已过期')), { status: 410 })
+  return job
+}
+
+function markContentPublished(state, contentId) {
+  const result = applyOps(state, [{ op: 'set_status', id: contentId, status: 'published' }])
+  return result.receipts
 }
 
 async function readBuffer(req, limit) {
@@ -357,12 +434,54 @@ async function importMarkdownState(store) {
       return state
     }, { undoable: false })
   } else result.state = current
+  // 外部采集只有在状态已持久化后才会整理到“灵感”，失败时保留源文件供下次重试。
+  if (result.externalFiles?.length) {
+    const organized = await organizeExternalMarkdown(store.root, result.externalFiles, result.state)
+    result.organized = organized.organized.length
+    if (organized.errors.length) result.errors.push(...organized.errors)
+  } else result.organized = 0
+  // 绝对路径只在 Host 内部使用，不返回给客户端。
+  delete result.externalFiles
   return result
 }
 
 async function copyWorkspaceContents(source, target) {
   await mkdir(target, { recursive: true })
   for (const name of await readdir(source)) await cp(join(source, name), join(target, name), { recursive: true, force: false, errorOnExist: true })
+}
+
+/** 在 Host 所在电脑上打开原生文件夹选择器，返回用户确认的绝对路径。 */
+function execFileText(command, args) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    execFile(command, args, { encoding: 'utf8' }, (error, stdout, stderr) => {
+      if (error) {
+        error.stdout = stdout
+        error.stderr = stderr
+        rejectPromise(error)
+        return
+      }
+      resolvePromise(String(stdout || '').trim())
+    })
+  })
+}
+
+async function pickWorkspaceFolder() {
+  try {
+    if (process.platform === 'darwin') {
+      // 用户取消 choose folder 时 osascript 返回 1；空字符串代表取消，不是错误。
+      return await execFileText('osascript', ['-e', 'POSIX path of (choose folder with prompt "选择工作台数据目录")'])
+    }
+    if (process.platform === 'linux') return await execFileText('zenity', ['--file-selection', '--directory', '--title=选择工作台数据目录'])
+    if (process.platform === 'win32') {
+      const script = "Add-Type -AssemblyName System.Windows.Forms; $dialog = New-Object System.Windows.Forms.FolderBrowserDialog; $dialog.Description = '选择工作台数据目录'; if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $dialog.SelectedPath }"
+      return await execFileText('powershell.exe', ['-NoProfile', '-STA', '-Command', script])
+    }
+  } catch (error) {
+    // 取消选择在 macOS 和 zenity 都是退出码 1，按取消处理；其他错误要让用户知道选择器不可用。
+    if (error?.code === 1) return ''
+    throw Object.assign(new Error(tr('无法打开文件夹选择器，请检查 Host 所在电脑的系统权限')), { status: 501, cause: error })
+  }
+  throw Object.assign(new Error(tr('当前系统不支持文件夹选择器')), { status: 501 })
 }
 
 async function switchWorkspace(ctx, desk, value) {
@@ -404,6 +523,22 @@ async function route(ctx, store, desk, req, res) {
     return sendFile(req, res, await attachmentPath(store, prefix, name))
   }
   if (method === 'GET') {
+    if (path === 'publish/handoff') {
+      const jobId = url.searchParams.get('jobId') || ''
+      const nonce = url.searchParams.get('nonce') || ''
+      const job = findPublishJob(await store.read(), jobId)
+      if (!job || !nonce || nonce !== job.nonce) return html(res, 404, '<!doctype html><meta charset="utf-8"><title>发布任务不存在</title><p>发布任务不存在或链接已失效。</p>')
+      if (isPublishJobExpired(job)) return html(res, 410, '<!doctype html><meta charset="utf-8"><title>发布任务已过期</title><p>发布任务已过期，请回到工作台重新点击“一键发布”。</p>')
+      return html(res, 200, handoffPage(job))
+    }
+    if (path === 'publish/job') {
+      const jobId = url.searchParams.get('jobId') || ''
+      const nonce = url.searchParams.get('nonce') || ''
+      const job = findPublishJob(await store.read(), jobId)
+      if (!job || !nonce || nonce !== job.nonce) return json(res, 404, { error: tr('发布任务不存在') })
+      if (isPublishJobExpired(job)) return json(res, 410, { error: tr('发布任务已过期') })
+      return json(res, 200, { job: publicPublishJob(job) })
+    }
     if (path === 'state') {
       if (!desk.settled) { desk.settled = true; await desk.producer.settleAll().catch(() => {}) }
       const imported = await importMarkdownState(store)
@@ -411,7 +546,7 @@ async function route(ctx, store, desk, req, res) {
       // 示例数据跟着界面语言走；用户自己的内容不动
       if (samplesNeedLocale(state, currentLang())) state = await store.mutate('', draft => (localizeSamples(draft, currentLang()), draft), { undoable: false })
       const markdownError = await projectMarkdown(store, state)
-      return json(res, 200, { state, model: engineLabel(ctx), modelOk: modelStatus.ok, modelError: modelStatus.error, canUndo: store.undo.length > 0, markdown: { imported: imported.imported, updated: imported.updated, skipped: imported.skipped, errors: imported.errors }, ...(markdownError ? { markdownError } : {}) })
+      return json(res, 200, { state, model: engineLabel(ctx), modelOk: modelStatus.ok, modelError: modelStatus.error, canUndo: store.undo.length > 0, markdown: { imported: imported.imported, updated: imported.updated, organized: imported.organized, skipped: imported.skipped, errors: imported.errors }, ...(markdownError ? { markdownError } : {}) })
     }
     if (path === 'production') {
       const id = url.searchParams.get('id') ?? ''
@@ -450,6 +585,14 @@ async function route(ctx, store, desk, req, res) {
       }, client)
       return json(res, 200, result)
     }
+    if (path === 'xbangdan/posts') {
+      const result = await fetchXbangdan({
+        section: url.searchParams.get('section') || 'rate',
+        category: url.searchParams.get('category') || 'all',
+        hours: url.searchParams.get('hours') || 24,
+      })
+      return json(res, 200, result)
+    }
     if (path === 'aihot') {
       const tab = url.searchParams.get('tab') || 'selected'
       return json(res, 200, await fetchAihot(tab, {
@@ -484,6 +627,10 @@ async function route(ctx, store, desk, req, res) {
       await switchWorkspace(ctx, desk, body.path)
       return json(res, 200, { ...publicSettings(await desk.settings.read(), Boolean(imageTool(ctx))), workspaceDir: desk.store.root, defaultWorkspaceDir: defaultWorkspaceDir() })
     }
+    case 'workspace/pick': {
+      const path = await pickWorkspaceFolder()
+      return json(res, 200, { path })
+    }
     case 'ops': {
       const label = typeof body.label === 'string' ? body.label : tr('操作')
       const result = await store.mutate(label, (draft) => {
@@ -493,6 +640,78 @@ async function route(ctx, store, desk, req, res) {
       const cleanupError = await cleanupMarkdown(store, result.receipts)
       const markdownError = cleanupError || await projectMarkdown(store, result.state)
       return json(res, 200, { ...result, ...(markdownError ? { markdownError } : {}) })
+    }
+    case 'publish/prepare': {
+      const id = String(body.id || '')
+      let job
+      const state = await store.mutate('准备发布任务', (draft) => {
+        job = createPublishJob(draft, id, { adapter: 'aibeike' })
+        return draft
+      }, { undoable: false })
+      return json(res, 200, { job: publicPublishJob(job), handoffUrl: handoffUrl(req, job), state })
+    }
+    case 'publish/handoff': {
+      const state = await store.read()
+      let job
+      try {
+        job = requirePublishJob(state, body.jobId, body.nonce)
+      } catch (err) {
+        if (err.status === 410) {
+          const current = findPublishJob(state, body.jobId)
+          const expired = current
+            ? await store.mutate('发布任务过期', draft => updatePublishJob(draft, current.id, { status: 'expired' }), { undoable: false })
+            : null
+          return json(res, 410, { error: err.message, ...(expired ? { job: publicPublishJob(expired) } : {}) })
+        }
+        return json(res, err.status || 404, { error: err.message })
+      }
+      if (job.contentId !== String(body.id || job.contentId)) return json(res, 404, { error: tr('发布任务不存在') })
+      const next = await store.mutate('打开发布任务', draft => updatePublishJob(draft, job.id, { status: 'handed_off', attempts: (job.attempts ?? 0) + 1 }), { undoable: false })
+      return json(res, 200, { job: publicPublishJob(next), handoffUrl: handoffUrl(req, next) })
+    }
+    case 'publish/result': {
+      const state = await store.read()
+      const job = requirePublishJob(state, body.jobId, body.nonce)
+      const status = typeof body.status === 'string' ? body.status : 'awaiting_user'
+      if (!['handed_off', 'awaiting_platform', 'awaiting_user', 'published', 'failed'].includes(status)) return json(res, 400, { error: tr('发布状态无效') })
+      const next = await store.mutate('更新发布结果', draft => {
+        const updated = updatePublishJob(draft, job.id, {
+          status,
+          externalId: body.externalId,
+          externalUrl: body.externalUrl,
+          lastError: body.error,
+        })
+        if (status === 'published') markContentPublished(draft, updated.contentId)
+        return updated
+      }, { undoable: false })
+      const nextState = await store.read()
+      const markdownError = await projectMarkdown(store, nextState)
+      return json(res, 200, { job: publicPublishJob(next), state: nextState, ...(markdownError ? { markdownError } : {}) })
+    }
+    case 'publish/confirm': {
+      const state = await store.read()
+      let job
+      try {
+        job = requirePublishJob(state, body.jobId, body.nonce)
+      } catch (err) {
+        if (err.status === 410) {
+          const current = findPublishJob(state, body.jobId)
+          const expired = current
+            ? await store.mutate('发布任务过期', draft => updatePublishJob(draft, current.id, { status: 'expired' }), { undoable: false })
+            : null
+          return json(res, 410, { error: err.message, ...(expired ? { job: publicPublishJob(expired) } : {}) })
+        }
+        return json(res, err.status || 404, { error: err.message })
+      }
+      if (job.contentId !== String(body.id || job.contentId)) return json(res, 404, { error: tr('发布任务不存在') })
+      const next = await store.mutate('确认发布结果', draft => {
+        const updated = updatePublishJob(draft, job.id, { status: 'published', externalUrl: body.externalUrl, externalId: body.externalId })
+        markContentPublished(draft, updated.contentId)
+        return updated
+      }, { undoable: false })
+      const nextState = await store.read()
+      const markdownError = await projectMarkdown(store, nextState)
+      return json(res, 200, { job: publicPublishJob(next), state: nextState, ...(markdownError ? { markdownError } : {}) })
     }
     case 'undo': {
       const label = await store.undoLast()
@@ -511,11 +730,11 @@ async function route(ctx, store, desk, req, res) {
       return json(res, 200, { state })
     }
     case 'produce': {
-      const started = await desk.producer.start(String(body.id), { format: body.format, references: body.references })
+      const started = await desk.producer.start(String(body.id), { format: body.format, references: body.references, imageCount: body.imageCount, shotCount: body.shotCount })
       return json(res, 200, { started, state: await store.read() })
     }
     case 'produce/merge': {
-      const id = await desk.producer.startMerge(body.sourceIds, { format: body.format, references: body.references, draftId: body.draftId })
+      const id = await desk.producer.startMerge(body.sourceIds, { format: body.format, references: body.references, draftId: body.draftId, imageCount: body.imageCount, shotCount: body.shotCount })
       return json(res, 200, { id, state: await store.read() })
     }
     case 'produce/cancel':

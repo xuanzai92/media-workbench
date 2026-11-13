@@ -2,7 +2,7 @@
 import React from 'react'
 import { ChatPanel } from './chat.jsx'
 import { downloadCover } from './cover.js'
-import { cancelProduce, closeItem, dispatchOps, openItem, regenAsset, revealSaved, runProduce, runProduceMerge, saveProduced, searchRedfox, setDesk, toast, useDesk, watchProduction } from './desk.js'
+import { cancelProduce, closeItem, confirmPublish, dispatchOps, handoffPublish, openItem, preparePublish, regenAsset, revealSaved, runProduce, runProduceMerge, saveProduced, searchRedfox, setDesk, toast, useDesk, watchProduction } from './desk.js'
 import { plural, t } from './i18n.js'
 import { Icon, IconButton } from './ui.jsx'
 import { PLATFORMS, SPRING_SNAP, SPRING_SOFT, STYLE_CATEGORIES, fmtDate, fmtWhen, reducedMotion, renderMarkdown, styleIcon, textLength, toLocalInput } from './util.js'
@@ -29,6 +29,19 @@ function OutputFormatPicker({ value, onChange, disabled = false }) {
           </button>
         ))}
       </div>
+    </div>
+  )
+}
+
+function ContentVisualConfig({ format, imageCount, shotCount, onChange, disabled = false }) {
+  return (
+    <div className="md-content-visual-config">
+      <span>{t('本次成稿的画面配置')}</span>
+      <div className="md-field-row">
+        <label className="md-field"><span>{t('配图数量')}</span><input type="number" min="0" max="4" value={imageCount} disabled={disabled} onChange={event => onChange({ imageCount: event.target.value })} /></label>
+        {format === 'video' ? <label className="md-field"><span>{t('分镜格数')}</span><input type="number" min="0" max="12" value={shotCount} disabled={disabled} onChange={event => onChange({ shotCount: event.target.value })} /></label> : null}
+      </div>
+      <small>{t('每条内容单独设置，保存后重新成稿时仍可调整。')}</small>
     </div>
   )
 }
@@ -153,17 +166,21 @@ function ProgressCard({ production, live, settings }) {
   const words = textLength(production.article || live?.text || '')
   const visuals = [production.cover, ...(production.images ?? [])].filter(Boolean)
   const shots = production.shots ?? []
+  const imageTotal = production.imageCount ?? settings?.imageCount ?? 2
+  const shotTotal = production.shotCount ?? settings?.shotCount ?? 6
   const count = list => list.filter(a => a.src).length
   const planned = production.stage !== 'brief'
   const visualTotal = isVideo
-    ? visuals.length || 1 + (settings?.imageCount ?? 2)
-    : visuals.length || settings?.imageCount || 2
+    ? visuals.length || 1 + imageTotal
+    : visuals.length || imageTotal
+  const visualsDone = planned && (visualTotal === 0 || (visuals.length > 0 && !visuals.some(isBusy)))
+  const shotsDone = planned && (shotTotal === 0 || (shots.length > 0 && !shots.some(isBusy)))
   const steps = [
     { label: t('标题和封面字'), done: planned, active: !planned },
     { label: production.article ? t(`${contentLabel} {n} 字`, { n: words, s: plural(words, '', 's') }) : words ? t('正在写 {n} 字', { n: words, s: plural(words, '', 's') }) : t(contentLabel), done: Boolean(production.article), active: planned && !production.article },
     ...(ready ? [
-      { label: t(isVideo ? '封面和配图 {done}/{total}' : '配图 {done}/{total}', { done: count(visuals), total: visualTotal }), done: planned && visuals.length > 0 && !visuals.some(isBusy), active: visuals.some(isBusy) },
-      ...(isVideo ? [{ label: t('分镜 {done}/{total}', { done: count(shots), total: shots.length || settings?.shotCount || 6 }), done: planned && shots.length > 0 && !shots.some(isBusy), active: shots.some(isBusy) }] : []),
+      { label: t(isVideo ? '封面和配图 {done}/{total}' : '配图 {done}/{total}', { done: count(visuals), total: visualTotal }), done: visualsDone, active: visuals.some(isBusy) },
+      ...(isVideo ? [{ label: t('分镜 {done}/{total}', { done: count(shots), total: shots.length || shotTotal }), done: shotsDone, active: shots.some(isBusy) }] : []),
     ] : []),
   ]
   return (
@@ -186,7 +203,14 @@ function IdeaCard({ item, live, settings }) {
   const selectedFormat = useDesk(s => s.outputFormat)
   const format = selectedFormat ?? production?.format ?? 'video'
   const [references, setReferences] = React.useState([])
-  const canStart = !production || !['running', 'done'].includes(production.status) || (production.status === 'done' && selectedFormat && selectedFormat !== production.format)
+  const [imageCount, setImageCount] = React.useState(production?.imageCount ?? settings?.imageCount ?? 2)
+  const [shotCount, setShotCount] = React.useState(production?.shotCount ?? settings?.shotCount ?? 6)
+  React.useEffect(() => {
+    setImageCount(production?.imageCount ?? settings?.imageCount ?? 2)
+    setShotCount(production?.shotCount ?? settings?.shotCount ?? 6)
+  }, [item.id, production?.imageCount, production?.shotCount, settings?.imageCount, settings?.shotCount])
+  const countsChanged = production?.status === 'done' && (Number(imageCount) !== Number(production.imageCount ?? settings?.imageCount ?? 2) || Number(shotCount) !== Number(production.shotCount ?? settings?.shotCount ?? 6))
+  const canStart = !production || !['running', 'done'].includes(production.status) || (production.status === 'done' && ((selectedFormat && selectedFormat !== production.format) || countsChanged))
   return (
     <div className="md-idea-card">
       <span className="md-idea-label">{t('灵感')} · {fmtDate(item.createdAt)}</span>
@@ -196,7 +220,8 @@ function IdeaCard({ item, live, settings }) {
       ) : null}
       {!running ? <ReferenceSourcePicker value={references} onChange={setReferences} /> : null}
       {!running ? <OutputFormatPicker value={format} onChange={next => setDesk({ outputFormat: next })} /> : null}
-      {canStart ? <button type="button" className="md-go" onClick={() => runProduce(item.id, { format, references })}>{production?.status === 'done' ? t('按此形式重新成稿') : t('确认并成稿')}</button> : null}
+      {!running ? <ContentVisualConfig format={format} imageCount={imageCount} shotCount={shotCount} onChange={next => { if (next.imageCount !== undefined) setImageCount(next.imageCount); if (next.shotCount !== undefined) setShotCount(next.shotCount) }} /> : null}
+      {canStart ? <button type="button" className="md-go" onClick={() => runProduce(item.id, { format, references, imageCount: Number(imageCount), shotCount: Number(shotCount) })}>{production?.status === 'done' ? t('按此形式重新成稿') : t('确认并成稿')}</button> : null}
       {running ? <ProgressCard production={{ ...production, id: item.id }} live={live} settings={settings} /> : null}
       {production?.status === 'failed' ? <p className="md-idea-hint is-error">{production.error}</p> : null}
       {!running && !settings?.imageReady ? <p className="md-idea-hint">{t(format === 'video' ? '接入生图模型后，封面、配图和分镜会画好。' : '接入生图模型后，配图会画好。')}<button type="button" onClick={() => setDesk({ settingsOpen: true })}>{t('去接入')}</button></p> : null}
@@ -207,8 +232,11 @@ function IdeaCard({ item, live, settings }) {
 
 function BatchStudio({ items }) {
   const format = useDesk(s => s.outputFormat) ?? 'video'
+  const settings = useDesk(s => s.settings)
   const [references, setReferences] = React.useState([])
-  const start = () => runProduceMerge(items.map(item => item.id), { format, references })
+  const [imageCount, setImageCount] = React.useState(settings?.imageCount ?? 2)
+  const [shotCount, setShotCount] = React.useState(settings?.shotCount ?? 6)
+  const start = () => runProduceMerge(items.map(item => item.id), { format, references, imageCount: Number(imageCount), shotCount: Number(shotCount) })
   return (
     <div className="md-studio md-batch-studio" role="dialog" aria-label={t('批量成稿')}>
       <div className="md-studio-chat">
@@ -236,6 +264,7 @@ function BatchStudio({ items }) {
             <ReferenceSourcePicker value={references} onChange={setReferences} />
             <StylePicker />
             <OutputFormatPicker value={format} onChange={next => setDesk({ outputFormat: next })} />
+            <ContentVisualConfig format={format} imageCount={imageCount} shotCount={shotCount} onChange={next => { if (next.imageCount !== undefined) setImageCount(next.imageCount); if (next.shotCount !== undefined) setShotCount(next.shotCount) }} />
             <button type="button" className="md-go" onClick={start}>{t('确认并合并成稿')}</button>
           </div>
         </div>
@@ -263,8 +292,16 @@ function MergedIdeaCard({ draft, sources, onGenerate, onViewSources }) {
   const production = draft.production
   const running = production?.status === 'running'
   const selectedFormat = useDesk(s => s.outputFormat)
+  const settings = useDesk(s => s.settings)
   const format = selectedFormat ?? production?.format ?? 'video'
-  const canStart = !running && (!production || production.status !== 'done' || (selectedFormat && selectedFormat !== production.format))
+  const [imageCount, setImageCount] = React.useState(production?.imageCount ?? settings?.imageCount ?? 2)
+  const [shotCount, setShotCount] = React.useState(production?.shotCount ?? settings?.shotCount ?? 6)
+  React.useEffect(() => {
+    setImageCount(production?.imageCount ?? settings?.imageCount ?? 2)
+    setShotCount(production?.shotCount ?? settings?.shotCount ?? 6)
+  }, [draft.id, production?.imageCount, production?.shotCount, settings?.imageCount, settings?.shotCount])
+  const countsChanged = production?.status === 'done' && (Number(imageCount) !== Number(production.imageCount ?? settings?.imageCount ?? 2) || Number(shotCount) !== Number(production.shotCount ?? settings?.shotCount ?? 6))
+  const canStart = !running && (!production || production.status !== 'done' || ((selectedFormat && selectedFormat !== production.format) || countsChanged))
   return (
     <div className="md-idea-card md-merged-idea-card">
       <span className="md-idea-label">{t('合并成稿')} · {t('已选 {n} 条灵感', { n: sources.length })}</span>
@@ -279,11 +316,29 @@ function MergedIdeaCard({ draft, sources, onGenerate, onViewSources }) {
       {production?.format ? <span className="md-merged-format">{t('当前形式')} · {outputFormatLabel(format)}</span> : null}
       {!running ? <StylePicker /> : null}
       {!running ? <OutputFormatPicker value={format} onChange={next => setDesk({ outputFormat: next })} /> : null}
-      {canStart ? <button type="button" className="md-go" onClick={() => onGenerate(format)}>{production?.status === 'done' ? t('按此形式重新成稿') : t('确认并合并成稿')}</button> : null}
+      {!running ? <ContentVisualConfig format={format} imageCount={imageCount} shotCount={shotCount} onChange={next => { if (next.imageCount !== undefined) setImageCount(next.imageCount); if (next.shotCount !== undefined) setShotCount(next.shotCount) }} /> : null}
+      {canStart ? <button type="button" className="md-go" onClick={() => onGenerate(format, { imageCount: Number(imageCount), shotCount: Number(shotCount) })}>{production?.status === 'done' ? t('按此形式重新成稿') : t('确认并合并成稿')}</button> : null}
       {running ? <ProgressCard production={{ ...production, id: draft.id }} live={null} settings={null} /> : null}
       {production?.notice ? <p className="md-idea-hint">{production.notice}</p> : null}
     </div>
   )
+}
+
+function mergedSourceContext(sources) {
+  const clip = (value, max = 12000) => {
+    const text = String(value || '').trim()
+    return text.length > max ? `${text.slice(0, max)}\n[内容已截断]` : text
+  }
+  return sources.map((source, index) => [
+    `【素材 ${index + 1}】`,
+    `标题：${clip(source.title, 240)}`,
+    `正文：${clip(source.body)}`,
+    `标签：${clip(Array.isArray(source.tags) ? source.tags.join('、') : '', 600)}`,
+    `平台：${clip(source.platform, 80)}`,
+    `来源：${clip(source.source, 240)}`,
+    `链接：${clip(source.url, 1000)}`,
+    `发布时间：${clip(source.publishedAt, 80)}`,
+  ].join('\n')).join('\n\n---\n\n')
 }
 
 function MergedStudio({ draft, sources, chatOpen }) {
@@ -302,8 +357,8 @@ function MergedStudio({ draft, sources, chatOpen }) {
     // 合集回到散落画布：来源按相关布局平铺，保留来源与合并稿的连线。
     setDesk({ view: 'home', mode: 'scatter', focusId: null, focusIds: [], selectedIds: [], mergedId: null, outputFormat: null, sheetOrigin: null, studioDock: false, related: { query: t('来源灵感'), ids: sourceIds, newId: null } })
   }, [sourceIds])
-  const generate = React.useCallback((format) => runProduceMerge(draft.sourceIds, { format, draftId: draft.id, references: production?.references ?? [] }), [draft.id, draft.sourceIds, production?.references])
-  const item = React.useMemo(() => ({ ...sources[0], id: draft.id, title: production?.title || draft.title, body: sources.map(source => source.body || source.title).join('\n\n'), production, sourceIds: draft.sourceIds, _merged: true }), [draft.id, draft.sourceIds, draft.title, production, sources])
+  const generate = React.useCallback((format, counts = {}) => runProduceMerge(draft.sourceIds, { format, draftId: draft.id, references: production?.references ?? [], ...counts }), [draft.id, draft.sourceIds, production?.references])
+  const item = React.useMemo(() => ({ ...sources[0], id: draft.id, title: production?.title || draft.title, body: mergedSourceContext(sources), production, sourceIds: draft.sourceIds, _merged: true }), [draft.id, draft.sourceIds, draft.title, production, sources])
   React.useEffect(() => {
     if (running || [production?.cover, ...(production?.images ?? []), ...(production?.shots ?? [])].some(isBusy)) return watchProduction(draft.id)
     return undefined
@@ -350,6 +405,49 @@ function Stat({ icon, value, unit }) {
   return <span className="md-hero-stat"><Icon name={icon} size={13} /><b>{value}</b>{unit}</span>
 }
 
+const PUBLISH_STATUS_LABEL = {
+  ready: '发布任务已准备',
+  opening: '正在打开爱贝壳',
+  handed_off: '内容已交给爱贝壳',
+  awaiting_platform: '等待选择平台',
+  awaiting_user: '等待确认发布',
+  published: '已记录发布结果',
+  failed: '发布任务失败',
+  expired: '发布任务已过期',
+}
+
+function publishStatus(job) {
+  return t(PUBLISH_STATUS_LABEL[job?.status] || '等待发布')
+}
+
+function PublishState({ item, job }) {
+  if (!job) return null
+  const status = job.status || 'ready'
+  const needsConfirm = ['handed_off', 'awaiting_platform', 'awaiting_user'].includes(status)
+  const reopen = async () => {
+    const opened = typeof window !== 'undefined' ? window.open('', '_blank') : null
+    await handoffPublish(item.id, opened)
+  }
+  const confirm = () => setDesk({
+    dialog: {
+      title: t('确认发布结果'),
+      submitLabel: t('记录已发布'),
+      initial: { externalUrl: job.externalUrl || '' },
+      fields: [{ name: 'externalUrl', label: t('平台链接（可选）'), type: 'url', placeholder: 'https://…', hint: t('如果爱贝壳没有回传链接，可以留空。') }],
+      onSubmit: values => confirmPublish(item.id, { externalUrl: values.externalUrl || null }),
+    },
+  })
+  return (
+    <div className={`md-publish-state status-${status}`}>
+      <span className="md-publish-state-dot" />
+      <span>{publishStatus(job)}</span>
+      <span className="md-grow" />
+      {needsConfirm ? <button type="button" className="md-link-btn" onClick={confirm}>{t('我已发布')}</button> : null}
+      {!['published'].includes(status) ? <button type="button" className="md-link-btn" onClick={reopen}>{t('重新打开')}</button> : null}
+    </div>
+  )
+}
+
 /** 主视觉：渐变底、大标题、数字，右边是视频封面和配图的拼贴。 */
 function HeroTile({ item, live, onView }) {
   const settings = useDesk(s => s.settings)
@@ -365,6 +463,8 @@ function HeroTile({ item, live, onView }) {
   const pictures = [production?.cover, ...images].filter(a => a?.src).length
   const showFigures = settings?.imageReady || images.some(a => a?.src)
   const [saving, setSaving] = React.useState(false)
+  const [publishing, setPublishing] = React.useState(false)
+  const publishJob = useDesk(s => s.publishJobs[item.id])
   const copy = async () => {
     await navigator.clipboard.writeText(`# ${production.title}\n\n${production.article}`)
     toast(t('脚本已复制'))
@@ -374,15 +474,32 @@ function HeroTile({ item, live, onView }) {
     await saveProduced(item.id)
     setSaving(false)
   }
+  const publish = async () => {
+    if (publishing) return
+    setPublishing(true)
+    const opened = typeof window !== 'undefined' ? window.open('', '_blank') : null
+    try {
+      const prepared = await preparePublish(item.id)
+      if (!prepared) {
+        if (opened && !opened.closed) opened.close()
+        return
+      }
+      // 先走 handoff 接口再导航，确保 Host 把任务状态推进到 handed_off。
+      // 预打开窗口保留给 handoffPublish 使用，避免异步请求触发弹窗拦截。
+      await handoffPublish(item.id, opened)
+    } finally {
+      setPublishing(false)
+    }
+  }
   const again = () => setDesk({
     dialog: {
       title: t('重新成稿'),
       submitLabel: t('重新生成'),
       fields: [{ name: 'note', label: t('现在的文章、封面和分镜会被替换，也会再消耗一次模型额度。'), type: 'hidden' }],
-      onSubmit: () => runProduce(item.id),
+      onSubmit: () => runProduce(item.id, { format: production?.format ?? 'video', imageCount: production?.imageCount, shotCount: production?.shotCount }),
     },
   })
-  const figures = images.length ? images : [null, null].slice(0, settings?.imageCount ?? 2)
+  const figures = images.length ? images : Array.from({ length: production?.imageCount ?? settings?.imageCount ?? 2 }, () => null)
   return (
     <section className={`md-tile md-tile-hero ${running ? 'is-running' : ''}`}>
       <div className="md-hero-copy">
@@ -397,6 +514,7 @@ function HeroTile({ item, live, onView }) {
           <div className="md-hero-actions">
             <button type="button" className="md-pill is-primary" onClick={copy}><Icon name="copy" size={14} />{t('复制脚本')}</button>
             <button type="button" className="md-pill" onClick={save} disabled={saving}><Icon name="save" size={14} />{saving ? t('保存中…') : t('保存')}</button>
+            <button type="button" className="md-pill is-primary" onClick={publish} disabled={publishing}><Icon name="send" size={14} />{publishing ? t('准备发布…') : t('一键发布')}</button>
             <button type="button" className="md-pill" onClick={() => downloadCover({ src: production.cover?.src, text: production.coverText || production.title }, production.title).catch(err => toast(err.message, { error: true }))}><Icon name="image" size={14} />{t('下载封面')}</button>
             <label className="md-pill md-date-pill">
               <Icon name="calendar" size={14} />{item.scheduledAt ? fmtWhen(item.scheduledAt) : t('排期')}
@@ -407,6 +525,7 @@ function HeroTile({ item, live, onView }) {
             </label>
           </div>
         ) : null}
+        <PublishState item={item} job={publishJob} />
       </div>
       <div className="md-collage">
         <div className="md-collage-main"><Poster production={production} item={item} onOpen={() => onView('cover')} onRetry={settings?.imageReady && production?.status === 'done' && production.cover ? () => regenAsset(item.id, 'cover') : undefined} /></div>
@@ -432,7 +551,8 @@ function HeroTile({ item, live, onView }) {
 /** 把配图插回文章：优先放到对应小标题那一节的末尾。 */
 function ArticleBody({ production, text, onView }) {
   const sections = React.useMemo(() => text.split(/\n(?=##\s)/).map(part => ({ text: part, heading: /^##\s+(.+)/.exec(part)?.[1]?.trim() ?? '' })), [text])
-  const imageCount = useDesk(s => s.settings?.imageCount ?? 2)
+  const settingsImageCount = useDesk(s => s.settings?.imageCount ?? 2)
+  const imageCount = production?.imageCount ?? settingsImageCount
   // 旧的成稿可能没有保存配图规划；先按设置补出占位，避免文章结构和未来的配图位置丢失。
   const images = production?.images?.length
     ? production.images
@@ -759,7 +879,7 @@ function Sheet({ item, live, formatOverride }) {
           <ArticleTile item={item} live={live} open={open === 'article'} onToggle={() => toggle('article')} onView={setViewing} tileRef={articleRef} />
         </section>
         <section {...tile('shots')}>
-          <ShotsTile item={item} live={live} count={settings?.shotCount ?? 6} open={open === 'shots'} onToggle={() => toggle('shots')} onView={setViewing} />
+          <ShotsTile item={item} live={live} count={item.production?.shotCount ?? settings?.shotCount ?? 6} open={open === 'shots'} onToggle={() => toggle('shots')} onView={setViewing} />
         </section>
       </div>
       {viewing ? <Viewer item={item} target={viewing} onChange={setViewing} onClose={() => setViewing(null)} /> : null}

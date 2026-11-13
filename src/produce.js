@@ -13,6 +13,34 @@ const CONCURRENCY = 3
 const TEXT_TIMEOUT_MS = 240_000
 const RETRY_WAIT_MS = [6000, 14000]
 
+function count(value, min, max, fallback) {
+  if (value === null || value === undefined || value === '') return fallback
+  const n = Number(value)
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : fallback
+}
+
+function contentSettings(settings, job) {
+  return {
+    ...settings,
+    imageCount: count(job.imageCount, 0, 4, count(settings.imageCount, 0, 4, 2)),
+    shotCount: count(job.shotCount, 0, 12, count(settings.shotCount, 0, 12, 6)),
+  }
+}
+
+const MERGED_SOURCE_BODY_LIMIT = 12000
+
+function mergedSourceText(value, max = 240) {
+  if (typeof value !== 'string') return ''
+  const text = value.trim()
+  return text.length > max ? `${text.slice(0, max)}\n[内容已截断]` : text
+}
+
+function mergedSourceMetrics(row) {
+  const keys = ['views', 'likes', 'comments', 'shares', 'saves']
+  const metrics = Object.fromEntries(keys.filter(key => row?.[key] !== undefined && row?.[key] !== null).map(key => [key, row[key]]))
+  return Object.entries(metrics).map(([key, value]) => `${key}：${value}`).join(' · ')
+}
+
 function splitTitle(markdown, fallback) {
   const match = /^\s*#\s+(.+)\n?/.exec(markdown)
   if (!match) return { title: fallback, article: markdown.trim() }
@@ -55,7 +83,17 @@ export function buildMergedItem(state, sourceIds, id = `merged_${sourceIds.join(
     id,
     kind: 'note',
     title: sources.map(row => row.title).join('｜').slice(0, 120),
-    body: sources.map((row, index) => `【素材 ${index + 1}】\n标题：${row.title}\n补充：${row.body || ''}\n标签：${(row.tags ?? []).join('、')}\n来源：${row.source || ''}`).join('\n\n---\n\n'),
+    body: sources.map((row, index) => [
+      `【素材 ${index + 1}】`,
+      `标题：${mergedSourceText(row.title)}`,
+      `正文：${mergedSourceText(row.body, MERGED_SOURCE_BODY_LIMIT)}`,
+      `标签：${(row.tags ?? []).slice(0, 24).join('、')}`,
+      `平台：${mergedSourceText(row.platform, 80)}`,
+      `来源：${mergedSourceText(row.source)}`,
+      `链接：${mergedSourceText(row.url, 1000)}`,
+      `发布时间：${mergedSourceText(row.publishedAt, 80)}`,
+      `指标：${mergedSourceMetrics(row)}`,
+    ].join('\n')).join('\n\n---\n\n'),
     tags: [...new Set(sources.flatMap(row => row.tags ?? []))].slice(0, 24),
     source: tr('合并灵感'),
     url: null,
@@ -216,17 +254,19 @@ export class Producer {
     return state
   }
 
-  async start(id, { format = 'video', references = [] } = {}) {
+  async start(id, { format = 'video', references = [], imageCount, shotCount } = {}) {
     const normalized = normalizeOutputFormat(format)
     if (this.jobs.has(id)) return false
     const current = await this.store.read()
     const item = current.items.find(row => row.id === id)
     if (!item) throw Object.assign(new Error(tr('找不到这条灵感')), { status: 404 })
-    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), sourceIds: [id], referenceIds: referenceIds(references), format: normalized, merged: false }
+    const defaults = await this.settings.read()
+    const previous = item.production ?? {}
+    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), sourceIds: [id], referenceIds: referenceIds(references), format: normalized, merged: false, imageCount: count(imageCount, 0, 4, count(previous.imageCount, 0, 4, count(defaults.imageCount, 0, 4, 2))), shotCount: count(shotCount, 0, 12, count(previous.shotCount, 0, 12, count(defaults.shotCount, 0, 12, 6))) }
     this.jobs.set(id, job)
     const state = await this.store.mutate('开始成稿', (draft) => {
       const target = draft.items.find(row => row.id === id)
-      target.production = { status: 'running', stage: 'brief', startedAt: new Date().toISOString(), title: target.title, article: '', format: normalized, sourceIds: [id], references: job.referenceIds, cover: null, images: [], shots: [] }
+      target.production = { status: 'running', stage: 'brief', startedAt: new Date().toISOString(), title: target.title, article: '', format: normalized, imageCount: job.imageCount, shotCount: job.shotCount, sourceIds: [id], references: job.referenceIds, cover: null, images: [], shots: [] }
       target.updatedAt = new Date().toISOString()
       return draft
     }, { undoable: false })
@@ -236,7 +276,7 @@ export class Producer {
     return true
   }
 
-  async startMerge(sourceIds, { format = 'video', references = [], draftId = null } = {}) {
+  async startMerge(sourceIds, { format = 'video', references = [], draftId = null, imageCount, shotCount } = {}) {
     const normalized = normalizeOutputFormat(format)
     const ids = [...new Set((Array.isArray(sourceIds) ? sourceIds : []).filter(Boolean))].slice(0, 12)
     const current = await this.store.read()
@@ -254,7 +294,9 @@ export class Producer {
       }, { undoable: false })
       await this.projectState(state)
     }
-    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), sourceIds: item.sourceIds, referenceIds: referenceIds(references), format: normalized, merged: true }
+    const defaults = await this.settings.read()
+    const previous = (reusableId ? current.mergedDrafts.find(row => row.id === id)?.production : null) ?? {}
+    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), sourceIds: item.sourceIds, referenceIds: referenceIds(references), format: normalized, merged: true, imageCount: count(imageCount, 0, 4, count(previous.imageCount, 0, 4, count(defaults.imageCount, 0, 4, 2))), shotCount: count(shotCount, 0, 12, count(previous.shotCount, 0, 12, count(defaults.shotCount, 0, 12, 6))) }
     this.jobs.set(id, job)
     const state = await this.store.mutate('开始合并成稿', (draft) => {
       const target = draft.mergedDrafts.find(row => row.id === id)
@@ -263,7 +305,7 @@ export class Producer {
       target.status = target.status === 'archived' ? 'outline' : (target.status ?? 'outline')
       target.scheduledAt ??= null
       target.platform ??= null
-      target.production = { status: 'running', stage: 'brief', startedAt: new Date().toISOString(), title: item.title, article: '', format: normalized, sourceIds: item.sourceIds, references: job.referenceIds, cover: null, images: [], shots: [] }
+      target.production = { status: 'running', stage: 'brief', startedAt: new Date().toISOString(), title: item.title, article: '', format: normalized, imageCount: job.imageCount, shotCount: job.shotCount, sourceIds: item.sourceIds, references: job.referenceIds, cover: null, images: [], shots: [] }
       target.updatedAt = new Date().toISOString()
       return draft
     }, { undoable: false })
@@ -288,9 +330,12 @@ export class Producer {
     job.planText ??= ''
     job.text ??= ''
     job.stage ??= 'brief'
+    job.imageCount ??= null
+    job.shotCount ??= null
     const { signal } = job.controller
     try {
       const settings = await this.settings.read()
+      const content = contentSettings(settings, job)
       const current = await this.store.read()
       const snapshot = JSON.parse(JSON.stringify(current))
       const sourceItems = job.sourceIds.map(sourceId => snapshot.items.find(row => row.id === sourceId)).filter(Boolean)
@@ -300,20 +345,20 @@ export class Producer {
       if (!item) throw new Error(tr('找不到这条灵感'))
 
       signal.throwIfAborted()
-      const backup = normalizePlan(fallbackPlan(item, '', settings, job.format), settings, item.title, job.format)
+      const backup = normalizePlan(fallbackPlan(item, '', content, job.format), content, item.title, job.format)
 
       let plan
       try {
-        const prompts = planPrompts(snapshot, item, settings, job.format, promptSources)
+        const prompts = planPrompts(snapshot, item, content, job.format, promptSources)
         const { text } = await this.callText({ ...prompts, maxTokens: 3000, light: true, signal: AbortSignal.any([signal, AbortSignal.timeout(TEXT_TIMEOUT_MS)]), onText: (delta) => { job.planText += delta } })
-        plan = normalizePlan(extractJson(text), settings, item.title, job.format)
+        plan = normalizePlan(extractJson(text), content, item.title, job.format)
       } catch (err) {
         if (signal.aborted) throw err
         plan = backup
       }
       // 模型漏掉配图或分镜时用模板补上，流水线不能因此少一块
-      if (plan.images.length < settings.imageCount) plan.images = [...plan.images, ...backup.images.slice(plan.images.length)]
-      if (job.format === 'video' && plan.shots.length < settings.shotCount) plan.shots = [...plan.shots, ...backup.shots.slice(plan.shots.length).map((row, i) => ({ ...row, no: plan.shots.length + i + 1 }))]
+      if (plan.images.length < content.imageCount) plan.images = [...plan.images, ...backup.images.slice(plan.images.length)]
+      if (job.format === 'video' && plan.shots.length < content.shotCount) plan.shots = [...plan.shots, ...backup.shots.slice(plan.shots.length).map((row, i) => ({ ...row, no: plan.shots.length + i + 1 }))]
 
       const ready = this.ready(settings)
       const initial = ready ? 'pending' : 'skipped'
@@ -322,6 +367,8 @@ export class Producer {
         production.stage = 'making'
         production.title = plan.title
         production.coverText = plan.coverText
+        production.imageCount = content.imageCount
+        production.shotCount = content.shotCount
         production.facts = plan.facts
         production.outline = plan.outline
         production.characters = plan.characters
@@ -337,7 +384,7 @@ export class Producer {
         let notice = null
         let markdown = ''
         try {
-          const prompts = articlePrompts(snapshot, item, settings.voice, plan, job.format, promptSources)
+          const prompts = articlePrompts(snapshot, item, content.voice, plan, job.format, promptSources)
           const result = await this.callText({ ...prompts, maxTokens: 6000, signal: AbortSignal.any([signal, AbortSignal.timeout(TEXT_TIMEOUT_MS)]), onText: (delta) => { job.text += delta } })
           markdown = result.text
           engine = result.model

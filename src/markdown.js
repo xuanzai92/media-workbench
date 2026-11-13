@@ -2,10 +2,11 @@
 // state.json 仍然是运行状态的来源，这个模块只负责幂等地更新用户可见文件。
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname, join, relative, sep } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 
 const INSPIRATION_DIR = '灵感'
 const CONTENT_DIR = '内容'
+const EXTERNAL_DIR = '外部采集'
 const STATUSES = new Set(['idea', 'outline', 'draft', 'ready', 'published', 'archived'])
 const KINDS = new Set(['image', 'video', 'web', 'quote', 'note'])
 const INSPIRATION_FRONTMATTER_KEYS = new Set([
@@ -341,7 +342,7 @@ export async function writeContentMarkdown(root, item, state, { now = new Date()
   return path
 }
 
-/** 把当前状态投影到灵感/和内容/；不会删除用户已经存在的 Markdown。 */
+/** 把当前状态投影到灵感/和内容/；不会删除用户已经存在的 Markdown。外部采集由导入流程单独整理。 */
 export async function syncMarkdown(root, state, options = {}) {
   await ensureMarkdownDirs(root)
   const written = []
@@ -363,11 +364,52 @@ export async function syncMarkdown(root, state, options = {}) {
   return written
 }
 
+/**
+ * 把本次导入的外部采集写成正式灵感文件，再删除外部采集源文件。
+ *
+ * importMarkdown 只负责读取和合并状态；Host 应在状态持久化并完成一次投影后调用
+ * 这里，确保写入灵感失败时仍会保留原始采集文件，下一次同步可以重试。
+ */
+export async function organizeExternalMarkdown(root, externalFiles, state, options = {}) {
+  const organized = []
+  const errors = []
+  const seen = new Set()
+  const externalRoot = resolve(root, EXTERNAL_DIR)
+  const items = Array.isArray(state?.items) ? state.items : []
+  for (const record of Array.isArray(externalFiles) ? externalFiles : []) {
+    const sourcePath = typeof record === 'string' ? record : record?.path
+    const id = typeof record === 'string' ? '' : text(record?.id)
+    if (!sourcePath || seen.has(sourcePath)) continue
+    seen.add(sourcePath)
+    const source = resolve(sourcePath)
+    if (!(source === externalRoot || source.startsWith(`${externalRoot}${sep}`))) {
+      errors.push(`${relative(root, sourcePath).split(sep).join('/')}: 外部采集文件路径无效`)
+      continue
+    }
+    const item = items.find(row => row?.id === id)
+    if (!item) {
+      errors.push(`${relative(root, sourcePath).split(sep).join('/')}: 找不到对应灵感`)
+      continue
+    }
+    try {
+      const target = await writeInspirationMarkdown(root, item, options)
+      if (!target) throw new Error('无法写入灵感 Markdown')
+      // 先写入规范化灵感，再删除原始采集，避免失败时丢失唯一来源。
+      await rm(source, { force: true })
+      organized.push({ id: item.id, source: relative(root, source).split(sep).join('/'), target: relative(root, target).split(sep).join('/') })
+    } catch (err) {
+      errors.push(`${relative(root, sourcePath).split(sep).join('/')}: ${err.message || String(err)}`)
+    }
+  }
+  return { organized, errors }
+}
+
 /** 工作台一旦选定根目录就准备好两个用户可见目录，即使当前还没有内容。 */
 export async function ensureMarkdownDirs(root) {
   await Promise.all([
     mkdir(join(root, INSPIRATION_DIR), { recursive: true }),
     mkdir(join(root, CONTENT_DIR), { recursive: true }),
+    mkdir(join(root, EXTERNAL_DIR), { recursive: true }),
   ])
 }
 
@@ -388,11 +430,12 @@ export async function removeMarkdown(root, { inspirationIds = [], contentIds = [
 }
 
 /**
- * 把灵感、内容选题和内容目录中的 Markdown 导入现有状态。
- * 带 id 的文件沿用原 id；已有 vault 文件没有 id 时按相对路径生成稳定 id，原文件保持不动。
+ * 把灵感、外部采集、内容选题和内容目录中的 Markdown 导入现有状态。
+ * 带 id 的文件沿用原 id；已有 vault 文件没有 id 时按相对路径生成稳定 id。
+ * 灵感和兼容目录原文件保持不动；外部采集文件会先记录在 externalFiles，待 Host 持久化后整理到灵感目录。
  */
 export async function importMarkdown(root, state, { now = new Date().toISOString() } = {}) {
-  const result = { state, imported: 0, updated: 0, skipped: 0, skippedFiles: [], errors: [] }
+  const result = { state, imported: 0, updated: 0, skipped: 0, skippedFiles: [], errors: [], externalFiles: [] }
   const skip = (path, reason) => {
     result.skipped += 1
     if (result.skippedFiles.length < 24) result.skippedFiles.push(`${relative(root, path).split(sep).join('/')}: ${reason}`)
@@ -473,6 +516,44 @@ export async function importMarkdown(root, state, { now = new Date().toISOString
       const after = JSON.stringify({ kind: existing.kind, title: existing.title, body: existing.body, tags: existing.tags, status: existing.status, source: existing.source, url: existing.url, platform: existing.platform, scheduledAt: existing.scheduledAt, markdownMeta: existing.markdownMeta })
       if (before === after) result.skipped += 1
       else result.updated += 1
+    } catch (err) {
+      result.errors.push(`${relative(root, path).split(sep).join('/')}: ${err.message || String(err)}`)
+    }
+  }
+
+  // 外部采集是只读输入队列：所有 Markdown 都按灵感导入，成功持久化后由
+  // organizeExternalMarkdown 写入“灵感”并移除原始文件。这样读取失败或写入失败时
+  // 原文件仍在“外部采集”中，可以在下一次同步重试。
+  const externalRoot = join(root, EXTERNAL_DIR)
+  const externalFiles = await markdownFilesUnder(externalRoot)
+  for (const path of externalFiles) {
+    try {
+      const source = await readFile(path, 'utf8')
+      const { fields, body } = parseFrontmatter(source)
+      const rel = relative(externalRoot, path).split(sep)
+      const fallbackTitle = rel.at(-1)?.replace(/\.md$/i, '') || '未命名灵感'
+      const next = importedInspiration(fields, body, now, {
+        id: text(fields.id) || stableMarkdownId(root, path, 'it_external'),
+        title: fallbackTitle,
+        source: '外部采集',
+      })
+      if (!next) {
+        skip(path, '无法识别为灵感')
+        continue
+      }
+      next.markdownMeta = { ...(next.markdownMeta ?? {}), external_capture: true }
+      const existing = state.items.find(item => item.id === next.id)
+      if (!existing) {
+        state.items.unshift({ ...next, personaIds: [], drafts: {}, importedFromMarkdown: true, importedFromExternal: true })
+        result.imported += 1
+      } else {
+        const before = JSON.stringify({ kind: existing.kind, title: existing.title, body: existing.body, tags: existing.tags, status: existing.status, source: existing.source, url: existing.url, platform: existing.platform, scheduledAt: existing.scheduledAt, markdownMeta: existing.markdownMeta })
+        Object.assign(existing, next, { importedFromMarkdown: true, importedFromExternal: true })
+        const after = JSON.stringify({ kind: existing.kind, title: existing.title, body: existing.body, tags: existing.tags, status: existing.status, source: existing.source, url: existing.url, platform: existing.platform, scheduledAt: existing.scheduledAt, markdownMeta: existing.markdownMeta })
+        if (before === after) result.skipped += 1
+        else result.updated += 1
+      }
+      result.externalFiles.push({ path, id: next.id })
     } catch (err) {
       result.errors.push(`${relative(root, path).split(sep).join('/')}: ${err.message || String(err)}`)
     }

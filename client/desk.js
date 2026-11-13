@@ -8,7 +8,7 @@ const BASE = 'media-workbench/'
 let snapshot = {
   state: null, model: null, modelOk: null, modelError: null, canUndo: false, error: null,
   view: 'home', mode: 'scatter', focusId: null, focusIds: [], selectedIds: [], mergedId: null, outputFormat: null, sheetOrigin: null, dockOpen: true, studioDock: false, chatQuote: null, query: '', kindFilter: 'all', related: null,
-  live: {}, settings: null, settingsOpen: false, modelPickOpen: false, thinking: false, toast: null, capture: null, dialog: null,
+  live: {}, publishJobs: {}, settings: null, settingsOpen: false, modelPickOpen: false, thinking: false, toast: null, capture: null, dialog: null,
 }
 const listeners = new Set()
 
@@ -54,9 +54,11 @@ export async function loadDesk() {
   try {
     // 先读设置拿到语言偏好，示例数据按这个语言返回
     const settings = await request('settings')
-    setLanguagePreference(settings.language)
+    // 工作台界面固定使用中文；语言不再作为设置项暴露。
+    setLanguagePreference('zh')
     const data = await request('state')
-    setDesk({ settings, state: data.state, model: data.model, modelOk: data.modelOk, modelError: data.modelError, canUndo: data.canUndo, error: null })
+    const publishJobs = Object.fromEntries((data.state?.publishJobs ?? []).map(job => [job.contentId, job]))
+    setDesk({ settings, state: data.state, publishJobs, model: data.model, modelOk: data.modelOk, modelError: data.modelError, canUndo: data.canUndo, error: null })
   } catch (err) {
     setDesk({ error: err.message })
   }
@@ -117,18 +119,18 @@ export function closeItem() {
 }
 
 /** 一键成稿。任务在 Host 里跑，这里只负责启动和看进度。 */
-export async function runProduce(id, { format = 'video', references = [] } = {}) {
+export async function runProduce(id, { format = 'video', references = [], imageCount, shotCount } = {}) {
   try {
-    const data = await request('produce', { id, format, references })
+    const data = await request('produce', { id, format, references, imageCount, shotCount })
     setDesk({ state: data.state })
   } catch (err) {
     report(err)
   }
 }
 
-export async function runProduceMerge(sourceIds, { format = 'video', references = [], draftId = null } = {}) {
+export async function runProduceMerge(sourceIds, { format = 'video', references = [], draftId = null, imageCount, shotCount } = {}) {
   try {
-    const data = await request('produce/merge', { sourceIds, format, references, draftId })
+    const data = await request('produce/merge', { sourceIds, format, references, draftId, imageCount, shotCount })
     setDesk({ state: data.state, mergedId: data.id, focusId: data.id, outputFormat: format })
     return data.id
   } catch (err) {
@@ -195,7 +197,7 @@ export function watchProduction(id) {
 export async function saveSettings(payload) {
   try {
     const settings = await request('settings', payload)
-    setLanguagePreference(settings.language)
+    setLanguagePreference('zh')
     setDesk({ settings })
     toast(t('设置已保存'))
     return true
@@ -205,7 +207,7 @@ export async function saveSettings(payload) {
   }
 }
 
-/** 扫描工作台目录里的灵感、内容选题和内容 Markdown，并立即回写最新投影。 */
+/** 扫描工作台目录里的外部采集、灵感、内容选题和内容 Markdown，并立即回写最新投影。 */
 export async function syncMarkdownFiles() {
   try {
     const data = await request('markdown/sync', {})
@@ -215,10 +217,11 @@ export async function syncMarkdownFiles() {
     else {
       const imported = data.imported ?? 0
       const updated = data.updated ?? 0
+      const organized = data.organized ?? 0
       const skipped = data.skipped ?? 0
       const detail = data.skippedFiles?.[0]
-      const summary = t('已同步 Markdown（新增 {imported}，更新 {updated}，跳过 {skipped}）', { imported, updated, skipped })
-      toast(detail && skipped && !imported && !updated ? `${summary}：${detail}` : summary, { error: Boolean(skipped && !imported && !updated) })
+      const summary = t('已同步 Obsidian 内容（新增 {imported}，更新 {updated}，整理 {organized}，跳过 {skipped}）', { imported, updated, organized, skipped })
+      toast(detail && skipped && !imported && !updated ? `${summary}：${detail}` : summary, { error: Boolean(skipped && !imported && !updated && !organized) })
     }
     return data
   } catch (err) {
@@ -255,6 +258,11 @@ export async function fetchRedfoxRankings({ platform = 'xiaohongshu', ranking = 
   return request(`redfox/rankings?${params.toString()}`)
 }
 
+export async function fetchXbangdanPosts({ section = 'rate', category = 'all', hours = 24 } = {}) {
+  const params = new URLSearchParams({ section, category, hours: String(hours) })
+  return request(`xbangdan/posts?${params.toString()}`)
+}
+
 /** 切换助手模型；两个字段都空表示跟随默认。 */
 export async function saveAssistant(assistant) {
   try {
@@ -271,7 +279,7 @@ export async function saveAssistant(assistant) {
 export async function testImage(payload) {
   try {
     const settings = await request('settings', payload)
-    setLanguagePreference(settings.language)
+    setLanguagePreference('zh')
     setDesk({ settings })
     const { src } = await request('settings/test', {})
     return src
@@ -332,6 +340,54 @@ export async function revealSaved(id) {
     await request('produce/reveal', { id })
   } catch (err) {
     report(err)
+  }
+}
+
+/** 创建发布任务；爱贝壳是否能直接接手由 Host 返回的 handoffUrl 决定。 */
+export async function preparePublish(id) {
+  try {
+    const data = await request('publish/prepare', { id })
+    const job = data.job ?? data.publishJob ?? null
+    if (job?.id) setDesk(s => ({ state: data.state ?? s.state, publishJobs: { ...s.publishJobs, [id]: job } }))
+    return data
+  } catch (err) {
+    report(err)
+    return null
+  }
+}
+
+/** 打开爱贝壳或本地 Handoff Bridge。窗口先在点击事件里打开，避免异步请求被浏览器拦截。 */
+export async function handoffPublish(id, openedWindow = null) {
+  try {
+    const job = snapshot.publishJobs[id]
+    const data = await request('publish/handoff', { id, jobId: job?.id, nonce: job?.nonce })
+    const next = data.job ?? data.publishJob
+    if (next?.id) setDesk(s => ({ publishJobs: { ...s.publishJobs, [id]: next } }))
+    if (data.handoffUrl) {
+      if (openedWindow && !openedWindow.closed) openedWindow.location.href = data.handoffUrl
+      else if (typeof window !== 'undefined') window.open(data.handoffUrl, '_blank', 'noopener,noreferrer')
+    }
+    return data
+  } catch (err) {
+    if (openedWindow && !openedWindow.closed) openedWindow.close()
+    report(err)
+    return null
+  }
+}
+
+/** 爱贝壳没有回调时由用户确认；有回调时 Host 也可复用同一入口。 */
+export async function confirmPublish(id, payload = {}) {
+  try {
+    const job = snapshot.publishJobs[id]
+    const data = await request('publish/confirm', { id, jobId: job?.id, nonce: job?.nonce, ...payload })
+    const next = data.job ?? data.publishJob
+    if (next?.id) setDesk(s => ({ state: data.state ?? s.state, publishJobs: { ...s.publishJobs, [id]: next } }))
+    else if (data.state) setDesk({ state: data.state })
+    toast(t('已记录发布结果'))
+    return data
+  } catch (err) {
+    report(err)
+    return null
   }
 }
 
@@ -443,6 +499,17 @@ export async function saveWorkspace(path) {
   } catch (err) {
     report(err)
     return false
+  }
+}
+
+/** 通过 Host 的原生目录选择器选择工作台目录；浏览器端不能安全地暴露本机绝对路径。 */
+export async function pickWorkspace() {
+  try {
+    const data = await request('workspace/pick', { path: snapshot.settings?.workspaceDir ?? '' })
+    return typeof data?.path === 'string' && data.path.trim() ? data.path.trim() : null
+  } catch (err) {
+    report(err)
+    return null
   }
 }
 

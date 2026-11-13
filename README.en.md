@@ -73,7 +73,7 @@ The interface is available in English and Chinese. It works in the desktop and w
 </tr>
 </table>
 
-The workspace supports content planning for RedNote, Douyin, Bilibili, WeChat, TikTok, Instagram, YouTube and X. Publishing still happens manually on each platform.
+The workspace supports content planning for RedNote, Douyin, Bilibili, WeChat, TikTok, Instagram, YouTube and X. When a draft is finished, **Publish** creates a short-lived handoff job and opens the Aibeike handoff page. The page attempts to pass the title, body, Markdown, tags and media references to Aibeike; you then choose a platform and complete the final publish there.
 
 ## Get started
 
@@ -128,7 +128,7 @@ Quit the desktop app completely (⌘Q) before installing and reopen it afterward
 dsh plugin --profile desktop remove media-workbench
 ```
 
-Uninstalling does not delete your content. State, settings and imported media are stored in `~/.dsh/media-workbench/` by default and can be moved in Settings. The workbench automatically manages `灵感/`, `内容/`, and `attachments/` under that root, so there is no separate draft export path to configure.
+Uninstalling does not delete your content. State, settings and imported media are stored in `~/.dsh/media-workbench/` by default and can be moved in Settings. The workbench automatically manages `外部采集/`, `灵感/`, `内容/`, and `attachments/` under that root, so there is no separate draft export path to configure.
 
 ### Local Markdown and Obsidian
 
@@ -136,10 +136,13 @@ The workspace directory is a local folder on this computer. When you leave it em
 
 - `state.json`: internal runtime state and undo data.
 - `attachments/`: uploaded images, covers, figures, and storyboard files. Legacy `files/` assets are copied here when the workspace is read, and old links remain readable.
+- `外部采集/`: an input folder for Markdown collected by external tools or browsers. Put files in topic subfolders; the first sync organizes them as inspirations and moves them into `灵感/`.
 - `灵感/<id>.md`: one Markdown file per inspiration, with its title, body, source, tags, status, and stable ID.
 - `内容/<id>/内容.md`: one folder and Markdown file per generated or merged piece. The `format` field records `article`, `image_text`, or `video`; folders are organized by content ID so a piece does not split into separate copies when its format changes.
 
-Capturing or editing an inspiration, starting a draft, and generating assets update the Markdown projection. Opening the workbench or clicking **Sync local Markdown** in Settings scans `灵感/`, `内容/`, and compatible `内容选题/<author>/*.md` files. Plain Markdown files placed directly under `内容/` are imported as content, and topic files without a stable `id` get one from their relative path; `type`, `tags`, `发布渠道`, and `发布时间` are mapped when present. Root-level summaries and templates are skipped. Custom inspiration frontmatter is retained in `markdownMeta`, and custom Markdown sections in the body are preserved. Content title, body, format, source IDs, status, platform, and schedule can be synced back; existing covers, figures, and storyboard media stay in the runtime state instead of being inferred from edited tables. Relative links let you open the whole workspace directory as an Obsidian vault.
+Capturing or editing an inspiration, starting a draft, and generating assets update the Markdown projection. Opening the workbench or clicking **Sync local Obsidian content** in Settings scans `外部采集/`, `灵感/`, `内容/`, and compatible `内容选题/<author>/*.md` files. `外部采集/` is a one-time input queue: Markdown files are organized into inspirations using their title, body, tags, and source, get a stable ID from their relative path when frontmatter or an ID is missing, and move into `灵感/` after the workbench has persisted them. If writing fails, the source file stays in place for the next retry. Plain Markdown files placed directly under `内容/` are imported as content, and topic files without a stable `id` get one from their relative path; `type`, `tags`, `发布渠道`, and `发布时间` are mapped when present. Root-level summaries and templates are skipped. Custom inspiration frontmatter is retained in `markdownMeta`, and custom Markdown sections in the body are preserved. Content title, body, format, source IDs, status, platform, and schedule can be synced back; existing covers, figures, and storyboard media stay in the runtime state instead of being inferred from edited tables. Relative links let you open the whole workspace directory as an Obsidian vault.
+
+All three folders live under the Settings **Workbench data directory**. If you create `外部采集/` in the project root, set the workbench data directory to that project root; the default remains `~/.dsh/media-workbench/`.
 
 The app updates the same file for the same ID instead of making a daily copy. Files remain on disk until you remove them. Deleting an inspiration in the workbench also removes `灵感/<id>.md`; deleting a generated piece removes `内容/<id>/` while keeping the original inspiration. Media files follow the workbench state and production lifecycle.
 
@@ -177,7 +180,7 @@ Yes. Titles, scripts and storyboard text still work, and the cover uses a text-o
 <summary><b>Can it publish to platforms for me?</b></summary>
 <br>
 
-No. The workspace handles planning, generation, scheduling and review. Copy the content or save the folder, then publish it yourself.
+Click **Publish** on a finished draft to start the Aibeike handoff. The workspace creates a one-time job valid for 15 minutes, opens a same-origin handoff page, and attempts to pass the title, body, Markdown, tags and media references through the Chrome extension message channel. You still choose the platform and complete the final publish in Aibeike. If the extension does not accept the message, the handoff page provides copy buttons and media links as a fallback. Platform cookies and passwords are never stored by the workspace.
 
 </details>
 

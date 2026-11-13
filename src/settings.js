@@ -12,7 +12,8 @@ const DEFAULTS = {
   exportDir: '',
   imageCount: 2,
   shotCount: 6,
-  language: 'auto',
+  // 工作台界面默认中文；保留读取旧值的兼容性，但客户端不再提供语言切换。
+  language: 'zh',
 }
 
 function clamp(value, min, max, fallback) {

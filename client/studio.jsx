@@ -2,10 +2,10 @@
 import React from 'react'
 import { ChatPanel } from './chat.jsx'
 import { downloadCover } from './cover.js'
-import { cancelProduce, closeItem, confirmPublish, dispatchOps, handoffPublish, openItem, preparePublish, regenAsset, revealSaved, runProduce, runProduceMerge, saveProduced, searchRedfox, setDesk, toast, useDesk, watchProduction } from './desk.js'
+import { cancelProduce, closeItem, confirmPublish, dispatchOps, handoffPublish, openItem, preparePublish, regenAsset, revealSaved, runProduce, runProduceMerge, saveProduced, setDesk, toast, useDesk, watchProduction } from './desk.js'
 import { plural, t } from './i18n.js'
 import { Icon, IconButton } from './ui.jsx'
-import { PLATFORMS, SPRING_SNAP, SPRING_SOFT, STYLE_CATEGORIES, fmtDate, fmtWhen, reducedMotion, renderMarkdown, styleIcon, textLength, toLocalInput } from './util.js'
+import { SPRING_SNAP, SPRING_SOFT, STYLE_CATEGORIES, fmtDate, fmtWhen, reducedMotion, renderMarkdown, styleIcon, textLength, toLocalInput } from './util.js'
 
 const isBusy = asset => ['pending', 'running'].includes(asset?.status)
 const OUTPUT_FORMATS = [
@@ -61,59 +61,6 @@ function StylePicker({ disabled = false }) {
   )
 }
 
-function ReferenceSourcePicker({ value = [], onChange, disabled = false }) {
-  const settings = useDesk(s => s.settings)
-  const [enabled, setEnabled] = React.useState(value.length > 0)
-  const [keyword, setKeyword] = React.useState('')
-  const [query, setQuery] = React.useState('')
-  const [platforms, setPlatforms] = React.useState([])
-  const [results, setResults] = React.useState([])
-  const [searching, setSearching] = React.useState(false)
-  // RedFox 支持的平台固定展示；没有本地导入内容的平台也可以直接搜索。
-  const availablePlatforms = React.useMemo(() => PLATFORMS.filter(platform => ['公众号', '小红书', '抖音', 'B站', '视频号', 'TikTok', 'Instagram', 'YouTube', 'X'].includes(platform)), [])
-  const selectedIds = React.useMemo(() => new Set(value.map(item => item.id)), [value])
-  const togglePlatform = platform => setPlatforms(current => current.includes(platform) ? current.filter(row => row !== platform) : [...current, platform])
-  const toggleResult = item => onChange(selectedIds.has(item.id) ? value.filter(row => row.id !== item.id) : [...value, item].slice(-8))
-  const submit = async event => {
-    event.preventDefault()
-    const next = keyword.trim()
-    if (!next || searching) return
-    setQuery(next)
-    setSearching(true)
-    const data = await searchRedfox({ keyword: next, platforms })
-    setSearching(false)
-    if (data) setResults(data.results ?? [])
-  }
-  const toggleEnabled = event => {
-    const next = event.target.checked
-    setEnabled(next)
-    if (!next) onChange([])
-  }
-  return <section className="md-reference-pick">
-    <label className="md-reference-toggle">
-      <input type="checkbox" checked={enabled} disabled={disabled} onChange={toggleEnabled} />
-      <span>{t('是否引用其他内容源')}</span>
-    </label>
-    {enabled ? <div className="md-reference-body">
-      <p className="md-reference-note">{settings?.redfox?.hasKey ? t('使用已配置的 RedFox 内容源，搜索后选择要补充的内容。') : t('请先在设置里配置 RedFox，并导入内容后再搜索。')}</p>
-      <form className="md-reference-search" onSubmit={submit}>
-        <input value={keyword} disabled={disabled} onChange={event => setKeyword(event.target.value)} placeholder={t('输入关键词搜索补充内容')} aria-label={t('输入关键词搜索补充内容')} />
-        <button type="submit" className="md-pill is-small" disabled={disabled || searching || !keyword.trim()}>{searching ? t('搜索中…') : t('搜索')}</button>
-      </form>
-      {availablePlatforms.length ? <div className="md-reference-platforms" aria-label={t('搜索平台')}>
-        {availablePlatforms.map(platform => <button type="button" key={platform} className={platforms.includes(platform) ? 'is-on' : ''} disabled={disabled} onClick={() => togglePlatform(platform)}>{t(platform)}</button>)}
-      </div> : null}
-      {query ? <div className="md-reference-results">
-        {results.length ? results.map(item => <button type="button" key={item.id} className={`md-reference-result ${selectedIds.has(item.id) ? 'is-on' : ''}`} disabled={disabled} onClick={() => toggleResult(item)}>
-          <span><strong>{item.title}</strong><small>{item.platform ? `${t(item.platform)} · ` : ''}{item.source || t('RedFox 内容')}</small></span>
-          <b>{selectedIds.has(item.id) ? t('已添加') : t('添加')}</b>
-        </button>) : <p className="md-reference-empty">{t('没有找到匹配的 RedFox 内容')}</p>}
-      </div> : null}
-      {value.length ? <div className="md-reference-selected"><span>{t('已补充 {n} 条内容', { n: value.length })}</span>{value.map(item => <button type="button" key={item.id} disabled={disabled} onClick={() => toggleResult(item)}>{item.title}<Icon name="close" size={11} /></button>)}</div> : null}
-    </div> : null}
-  </section>
-}
-
 function unescapeJson(text) {
   try {
     return JSON.parse(`"${text}"`)
@@ -160,7 +107,7 @@ function Plate({ asset, paper = false, mark = null, alt = '', onOpen, onRetry })
 function ProgressCard({ production, live, settings }) {
   const running = production.status === 'running'
   const ready = settings?.imageReady
-  const format = production.format ?? 'video'
+  const format = production.format ?? 'article'
   const isVideo = format === 'video'
   const contentLabel = isVideo ? '脚本' : format === 'image_text' ? '内容' : '文章'
   const words = textLength(production.article || live?.text || '')
@@ -201,8 +148,7 @@ function IdeaCard({ item, live, settings }) {
   const production = item.production
   const running = production?.status === 'running'
   const selectedFormat = useDesk(s => s.outputFormat)
-  const format = selectedFormat ?? production?.format ?? 'video'
-  const [references, setReferences] = React.useState([])
+  const format = selectedFormat ?? production?.format ?? 'article'
   const [imageCount, setImageCount] = React.useState(production?.imageCount ?? settings?.imageCount ?? 2)
   const [shotCount, setShotCount] = React.useState(production?.shotCount ?? settings?.shotCount ?? 6)
   React.useEffect(() => {
@@ -218,10 +164,9 @@ function IdeaCard({ item, live, settings }) {
       {!running ? (
         <StylePicker />
       ) : null}
-      {!running ? <ReferenceSourcePicker value={references} onChange={setReferences} /> : null}
       {!running ? <OutputFormatPicker value={format} onChange={next => setDesk({ outputFormat: next })} /> : null}
       {!running ? <ContentVisualConfig format={format} imageCount={imageCount} shotCount={shotCount} onChange={next => { if (next.imageCount !== undefined) setImageCount(next.imageCount); if (next.shotCount !== undefined) setShotCount(next.shotCount) }} /> : null}
-      {canStart ? <button type="button" className="md-go" onClick={() => runProduce(item.id, { format, references, imageCount: Number(imageCount), shotCount: Number(shotCount) })}>{production?.status === 'done' ? t('按此形式重新成稿') : t('确认并成稿')}</button> : null}
+      {canStart ? <button type="button" className="md-go" onClick={() => runProduce(item.id, { format, imageCount: Number(imageCount), shotCount: Number(shotCount) })}>{production?.status === 'done' ? t('按此形式重新成稿') : t('确认并成稿')}</button> : null}
       {running ? <ProgressCard production={{ ...production, id: item.id }} live={live} settings={settings} /> : null}
       {production?.status === 'failed' ? <p className="md-idea-hint is-error">{production.error}</p> : null}
       {!running && !settings?.imageReady ? <p className="md-idea-hint">{t(format === 'video' ? '接入生图模型后，封面、配图和分镜会画好。' : '接入生图模型后，配图会画好。')}<button type="button" onClick={() => setDesk({ settingsOpen: true })}>{t('去接入')}</button></p> : null}
@@ -231,12 +176,11 @@ function IdeaCard({ item, live, settings }) {
 }
 
 function BatchStudio({ items }) {
-  const format = useDesk(s => s.outputFormat) ?? 'video'
+  const format = useDesk(s => s.outputFormat) ?? 'article'
   const settings = useDesk(s => s.settings)
-  const [references, setReferences] = React.useState([])
   const [imageCount, setImageCount] = React.useState(settings?.imageCount ?? 2)
   const [shotCount, setShotCount] = React.useState(settings?.shotCount ?? 6)
-  const start = () => runProduceMerge(items.map(item => item.id), { format, references, imageCount: Number(imageCount), shotCount: Number(shotCount) })
+  const start = () => runProduceMerge(items.map(item => item.id), { format, imageCount: Number(imageCount), shotCount: Number(shotCount) })
   return (
     <div className="md-studio md-batch-studio" role="dialog" aria-label={t('批量成稿')}>
       <div className="md-studio-chat">
@@ -261,7 +205,6 @@ function BatchStudio({ items }) {
                 </div>
               ))}
             </div>
-            <ReferenceSourcePicker value={references} onChange={setReferences} />
             <StylePicker />
             <OutputFormatPicker value={format} onChange={next => setDesk({ outputFormat: next })} />
             <ContentVisualConfig format={format} imageCount={imageCount} shotCount={shotCount} onChange={next => { if (next.imageCount !== undefined) setImageCount(next.imageCount); if (next.shotCount !== undefined) setShotCount(next.shotCount) }} />
@@ -293,7 +236,7 @@ function MergedIdeaCard({ draft, sources, onGenerate, onViewSources }) {
   const running = production?.status === 'running'
   const selectedFormat = useDesk(s => s.outputFormat)
   const settings = useDesk(s => s.settings)
-  const format = selectedFormat ?? production?.format ?? 'video'
+  const format = selectedFormat ?? production?.format ?? 'article'
   const [imageCount, setImageCount] = React.useState(production?.imageCount ?? settings?.imageCount ?? 2)
   const [shotCount, setShotCount] = React.useState(production?.shotCount ?? settings?.shotCount ?? 6)
   React.useEffect(() => {
@@ -357,7 +300,7 @@ function MergedStudio({ draft, sources, chatOpen }) {
     // 合集回到散落画布：来源按相关布局平铺，保留来源与合并稿的连线。
     setDesk({ view: 'home', mode: 'scatter', focusId: null, focusIds: [], selectedIds: [], mergedId: null, outputFormat: null, sheetOrigin: null, studioDock: false, related: { query: t('来源灵感'), ids: sourceIds, newId: null } })
   }, [sourceIds])
-  const generate = React.useCallback((format, counts = {}) => runProduceMerge(draft.sourceIds, { format, draftId: draft.id, references: production?.references ?? [], ...counts }), [draft.id, draft.sourceIds, production?.references])
+  const generate = React.useCallback((format, counts = {}) => runProduceMerge(draft.sourceIds, { format, draftId: draft.id, ...counts }), [draft.id, draft.sourceIds])
   const item = React.useMemo(() => ({ ...sources[0], id: draft.id, title: production?.title || draft.title, body: mergedSourceContext(sources), production, sourceIds: draft.sourceIds, _merged: true }), [draft.id, draft.sourceIds, draft.title, production, sources])
   React.useEffect(() => {
     if (running || [production?.cover, ...(production?.images ?? []), ...(production?.shots ?? [])].some(isBusy)) return watchProduction(draft.id)
@@ -496,7 +439,7 @@ function HeroTile({ item, live, onView }) {
       title: t('重新成稿'),
       submitLabel: t('重新生成'),
       fields: [{ name: 'note', label: t('现在的文章、封面和分镜会被替换，也会再消耗一次模型额度。'), type: 'hidden' }],
-      onSubmit: () => runProduce(item.id, { format: production?.format ?? 'video', imageCount: production?.imageCount, shotCount: production?.shotCount }),
+      onSubmit: () => runProduce(item.id, { format: production?.format ?? 'article', imageCount: production?.imageCount, shotCount: production?.shotCount }),
     },
   })
   const figures = images.length ? images : Array.from({ length: production?.imageCount ?? settings?.imageCount ?? 2 }, () => null)
@@ -794,8 +737,26 @@ function Viewer({ item, target, onChange, onClose }) {
   )
 }
 
+function PendingSheet({ format, status }) {
+  const running = status === 'running'
+  return (
+    <main className={`md-pending-sheet ${running ? 'is-running' : ''}`} aria-label={t(running ? '正在成稿' : '待生成')}>
+      <div className="md-pending-card">
+        <div className="md-pending-mark" aria-hidden="true"><span>{running ? '…' : '+'}</span></div>
+        <div className="md-pending-copy">
+          <span className="md-pending-kicker">{t(running ? '正在成稿' : '待生成')}</span>
+          <h2>{t(running ? '内容正在生成中' : '准备生成内容')}</h2>
+          <p>{t(running ? '文章、图文或视频脚本完成后会显示在这里。' : '选择输出形式并确认成稿后，生成内容会显示在这里。')}</p>
+          <span className="md-pending-format">{outputFormatLabel(format)}</span>
+        </div>
+      </div>
+    </main>
+  )
+}
+
 function Sheet({ item, live, formatOverride }) {
   const settings = useDesk(s => s.settings)
+  const selectedFormat = useDesk(s => s.outputFormat)
   const [open, setOpen] = React.useState(null)
   const [viewing, setViewing] = React.useState(null)
   const bento = React.useRef(null)
@@ -803,7 +764,7 @@ function Sheet({ item, live, formatOverride }) {
   const articleRef = React.useRef(null)
   const origin = React.useRef(null)
   const closing = React.useRef(false)
-  const format = item.production?.format ?? formatOverride ?? 'video'
+  const format = item.production?.format ?? formatOverride ?? selectedFormat ?? 'article'
   const deleteDraft = React.useCallback(() => {
     const title = (item.production?.title || item.title || '').slice(0, 10)
     dispatchOps([{ op: 'delete_production', id: item.id }], { label: t('删除《{title}》的成稿', { title }) })
@@ -851,6 +812,10 @@ function Sheet({ item, live, formatOverride }) {
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
   }, [open, viewing, collapse])
+
+  if (item.production?.status !== 'done') {
+    return <PendingSheet format={format} status={item.production?.status} />
+  }
 
   if (format === 'article' || format === 'image_text') {
     return (

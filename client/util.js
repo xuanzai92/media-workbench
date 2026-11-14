@@ -125,8 +125,13 @@ export function unit(n, zh) {
 /** 连续记录天数：今天还没记时，从昨天往回算，不会让今天一早就断掉。 */
 /** 灵感墙和邮票只放自己记下的灵感，从账号导入的已发内容不算。 */
 export function isIdea(item) {
-  // 本地 Markdown 的旧记录曾被误标为 imported；有 externalId 的才是账号导入内容。
-  return !item.parentId && (!item.imported || item.importedFromMarkdown === true || !item.externalId)
+  // syncMarkdown 会给所有已投影的记录补上 importedFromMarkdown；部分旧记录
+  // 还会丢失 externalId，但仍保留 RedFox 来源或标签，不能因此重新进入灵感墙。
+  const source = String(item?.source ?? '').toLowerCase()
+  const tags = Array.isArray(item?.tags)
+    ? item.tags.map((value) => String(value).toLowerCase()).join(' ')
+    : ''
+  return !item.parentId && !item.externalId && !source.includes('redfox') && !tags.includes('redfox')
 }
 
 export function computeStreak(items, now = new Date()) {

@@ -22,6 +22,8 @@ const BOARD_DEFS = {
   ],
 }
 const FIXED_CATEGORY = '数码科技'
+const INITIAL_ROW_LIMIT = 32
+const ROW_PAGE_SIZE = 32
 
 function yesterday() {
   const date = new Date()
@@ -73,6 +75,7 @@ export function RankingsView() {
   const [error, setError] = React.useState(null)
   const [collectingKeys, setCollectingKeys] = React.useState(() => new Set())
   const [collectedKeys, setCollectedKeys] = React.useState(() => new Set())
+  const [visibleCount, setVisibleCount] = React.useState(INITIAL_ROW_LIMIT)
   const boards = BOARD_DEFS[platform] ?? BOARD_DEFS.xiaohongshu
   const activeBoard = boards.find(item => item.id === ranking) ?? boards[0]
 
@@ -92,6 +95,7 @@ export function RankingsView() {
   }, [activeBoard, date, hasKey, platform])
 
   React.useEffect(() => { load() }, [load])
+  React.useEffect(() => { setVisibleCount(INITIAL_ROW_LIMIT) }, [platform, ranking, date])
 
   const selectPlatform = next => {
     const nextBoard = BOARD_DEFS[next]?.[0]
@@ -137,6 +141,9 @@ export function RankingsView() {
     return <div className="md-board-page"><section className="md-tile md-ranking-empty"><div><Icon name="chart" size={28} /><h1>{t('社媒榜单')}</h1><p>{t('从 RedFox 读取小红书和抖音的公开榜单，帮助你找到值得跟进的账号和选题。')}</p><button type="button" className="md-btn is-primary" onClick={() => setDesk({ settingsOpen: true })}>{t('去设置 RedFox')}</button></div></section></div>
   }
 
+  const rows = result?.rows ?? []
+  const visibleRows = rows.slice(0, visibleCount)
+
   return (
     <div className="md-board-page md-rankings-page">
       <header className="md-page-head md-ranking-head">
@@ -160,9 +167,10 @@ export function RankingsView() {
       {error ? <section className="md-tile md-ranking-error"><Icon name="alert" size={16} /><span>{error}</span><button type="button" className="md-inline-link" onClick={load}>{t('重试')}</button></section> : null}
       {!error && loading && !result ? <section className="md-tile md-ranking-loading"><span className="md-shimmer">{t('正在读取 RedFox 榜单…')}</span></section> : null}
       {!error && result && !result.rows.length ? <section className="md-tile md-ranking-loading"><span>{t('这个日期没有榜单数据')}</span></section> : null}
-      {result?.rows.length ? <section className="md-tile md-ranking-list">
+      {rows.length ? <section className="md-tile md-ranking-list">
         <header><div><h2>{t(activeBoard.label)}</h2><p>{result.date} · {t(result.category === 'all' ? '全部' : result.category)} · {t('展示 {n} 条', { n: result.rows.length })}</p></div><span className="md-ranking-source">RedFox</span></header>
-        <div className="md-ranking-rows">{result.rows.map(row => <RankingRow key={rowKey(row)} row={row} onCollect={collectRow} collecting={collectingKeys.has(rowKey(row))} collected={isCollected(row)} />)}</div>
+        <div className="md-ranking-rows">{visibleRows.map(row => <RankingRow key={rowKey(row)} row={row} onCollect={collectRow} collecting={collectingKeys.has(rowKey(row))} collected={isCollected(row)} />)}</div>
+        {visibleCount < rows.length ? <button type="button" className="md-btn md-ranking-more" onClick={() => setVisibleCount(count => Math.min(count + ROW_PAGE_SIZE, rows.length))}>{t('加载更多')}</button> : null}
       </section> : null}
     </div>
   )

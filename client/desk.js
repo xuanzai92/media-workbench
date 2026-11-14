@@ -119,7 +119,7 @@ export function closeItem() {
 }
 
 /** 一键成稿。任务在 Host 里跑，这里只负责启动和看进度。 */
-export async function runProduce(id, { format = 'video', references = [], imageCount, shotCount } = {}) {
+export async function runProduce(id, { format = 'article', references = [], imageCount, shotCount } = {}) {
   try {
     const data = await request('produce', { id, format, references, imageCount, shotCount })
     setDesk({ state: data.state })
@@ -128,7 +128,7 @@ export async function runProduce(id, { format = 'video', references = [], imageC
   }
 }
 
-export async function runProduceMerge(sourceIds, { format = 'video', references = [], draftId = null, imageCount, shotCount } = {}) {
+export async function runProduceMerge(sourceIds, { format = 'article', references = [], draftId = null, imageCount, shotCount } = {}) {
   try {
     const data = await request('produce/merge', { sourceIds, format, references, draftId, imageCount, shotCount })
     setDesk({ state: data.state, mergedId: data.id, focusId: data.id, outputFormat: format })

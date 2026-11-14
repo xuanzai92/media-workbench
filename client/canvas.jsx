@@ -169,7 +169,7 @@ function RelationLinks({ groups, byId, positionOf, activeIds, visibleIds }) {
 function mergedCanvasItem(draft, source) {
   const base = source ?? { id: draft.id, title: draft.title || t('合并成稿'), body: '', kind: 'note', status: 'draft', createdAt: draft.createdAt }
   const production = draft.production
-  const format = production?.format ?? 'video'
+  const format = production?.format ?? 'article'
   return {
     ...base,
     id: draft.id,

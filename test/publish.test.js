@@ -73,3 +73,77 @@ test('发布任务：交接、确认后记录外链和发布时间', () => {
   assert.equal(published.externalId, 'post_1')
   assert.equal(published.publishedAt, '2026-11-12T08:03:00.000Z')
 })
+
+function writtenState(format, merged = false) {
+  const content = {
+    id: 'written_publish', title: '素材标题', tags: ['写作'],
+    production: {
+      status: 'done', textStatus: 'done', format, title: '成稿标题',
+      article: '开场内容\n\n## 收集\n先收集信息。\n\n## 整理\n再按主题归纳。',
+      imageCount: 2,
+      images: [
+        { status: 'done', anchor: '整理', caption: '主题归纳', src: 'media-workbench/attachments/organize.png' },
+        { status: 'done', anchor: '收集', caption: '收集信息', src: 'media-workbench/attachments/collect.png' },
+      ],
+      cover: { src: 'media-workbench/attachments/old-cover.png' },
+      shots: [{ src: 'media-workbench/attachments/old-shot.png' }],
+    },
+  }
+  return { items: merged ? [] : [content], mergedDrafts: merged ? [content] : [], publishJobs: [] }
+}
+
+for (const format of ['article', 'image_text']) {
+  for (const merged of [false, true]) {
+    const label = `${merged ? '合并稿' : '普通稿'} ${format}`
+    test(`发布任务：${label} 的结构草稿、缺图和失败图片必须先补齐`, () => {
+      for (const change of [
+        p => { p.textStatus = 'fallback' },
+        p => { delete p.textStatus; p.engine = 'local'; p.notice = '旧版结构草稿' },
+        p => { p.images.pop() },
+        p => { p.images[0].status = 'failed' },
+        p => { p.images[0].status = 'running' },
+        p => { delete p.images[0].src },
+      ]) {
+        const state = writtenState(format, merged)
+        const content = [...state.items, ...state.mergedDrafts][0]
+        change(content.production)
+        const before = structuredClone(state)
+        assert.equal(buildPublishSource(content), null)
+        assert.throws(() => createPublishJob(state, content.id, { now: NOW }), /请先完成成稿/)
+        assert.deepEqual(state, before, 'Rejected readiness checks must not create a publish job or mutate content')
+      }
+    })
+
+    test(`发布任务：${label} 完成后正文和图片位置符合内容形式`, () => {
+      const state = writtenState(format, merged)
+      const content = [...state.items, ...state.mergedDrafts][0]
+      const job = createPublishJob(state, content.id, { now: NOW })
+      assert.equal(job.contentId, content.id)
+      assert.equal(job.source.format, format)
+      assert.equal(job.source.body, content.production.article)
+      assert.equal(job.source.title, '成稿标题')
+      assert.deepEqual(job.source.media.map(row => row.role), ['image', 'image'], 'Written formats must not include stale video cover or shots')
+      assert.deepEqual(job.source.media.map(row => row.index), [0, 1])
+      assert.equal((job.source.markdown.match(/!\[/g) ?? []).length, 2)
+      if (format === 'article') {
+        assert.match(job.source.markdown, /先收集信息。\s+!\[收集信息\]\(media-workbench\/attachments\/collect.png\)\s+## 整理/)
+        assert.match(job.source.markdown, /再按主题归纳。\s+!\[主题归纳\]\(media-workbench\/attachments\/organize.png\)/)
+      } else {
+        assert.ok(job.source.markdown.startsWith(`# 成稿标题\n\n${content.production.article}\n\n`))
+        assert.ok(job.source.markdown.indexOf('organize.png') < job.source.markdown.indexOf('collect.png'), 'Image-text must retain its ordered image set regardless of section anchors')
+      }
+      assert.equal(state.publishJobs.length, 1)
+    })
+  }
+}
+
+test('发布任务：零图文章可发布，零图图文仍不能通过完整性检查', () => {
+  for (const format of ['article', 'image_text']) {
+    const state = writtenState(format)
+    const content = state.items[0]
+    content.production.images = []
+    content.production.imageCount = 0
+    if (format === 'article') assert.ok(buildPublishSource(content))
+    else assert.equal(buildPublishSource(content), null)
+  }
+})

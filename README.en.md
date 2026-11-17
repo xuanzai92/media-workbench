@@ -27,7 +27,7 @@
 
 ## What it is
 
-Media Workbench is a content workspace that runs in the DeepSeek Harness sidebar. Save an idea, a link or a piece of media, then generate a title, spoken script, cover, images and a six-frame storyboard. Schedule the finished piece on the calendar and review its performance later.
+Media Workbench is a content workspace that runs in the DeepSeek Harness sidebar. Save an idea, a link or a piece of media, then generate an article, an image post or a video script. Edit and export the piece, schedule it on the calendar and review its performance later.
 
 The interface is available in English and Chinese. It works in the desktop and web versions, and keeps your data on your computer unless you configure an external service.
 
@@ -45,14 +45,18 @@ The interface is available in English and Chinese. It works in the desktop and w
 </td>
 <td valign="top">
 <p><b>Generate the whole structure.</b></p>
-<p>The title, script, cover, images and six storyboard frames are generated together and appear as each one is ready.</p>
+<p>Articles include a title, complete prose and inline figures. Image posts include a title, short copy and an ordered image set. Video scripts, covers and storyboards remain supported.</p>
 <p><b>Ask for a change.</b></p>
-<p>Rewrite a title, change the tone, revise one storyboard frame or redraw an image in a sentence. Every change can be undone.</p>
+<p>Edit the title and body directly, or ask the assistant to rewrite them. Retry a failed image without regenerating the text or other images. Manual edits support undo.</p>
 <p><b>Export and use it.</b></p>
-<p>Edit and copy the script, or save the complete piece to one folder.</p>
+<p>Copy the full content including its title, or export Markdown and images. Article figures match their preview placement; image posts keep numbered image order.</p>
 </td>
 </tr>
 </table>
+
+Articles and image posts show text readiness and the number of completed images separately. Fallback drafts, missing images and image failures remain visible. An article can contain no images; an image post needs at least one. **Export current version** remains available for partial results, with export notes describing missing assets and any retained previous images. Publishing handoff becomes available once the text is reviewed and the requested images are complete.
+
+The English interface exports `article.md` or `post.md`; the Chinese interface exports `文章.md` or `图文.md`. Each export includes numbered images and `export-notes.txt` / `导出说明.txt`. All local image files are checked before writing: missing files and remote images that have not been saved as local attachments block the export with an explanation. Repeated exports preserve user files and list the files in the current version. Any previous export files outside that version are explicitly listed, so use the current manifest when selecting files. Existing video script, cover and storyboard exports remain compatible.
 
 ### Ideas, scheduling, insights and styles
 

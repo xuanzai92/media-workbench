@@ -1,5 +1,11 @@
 // Host 英文词典：key 是中文原文，{name} 是占位符。
 export const EN = {
+  '规划未返回标题，已沿用素材标题；请核对后使用。': 'The plan omitted a title. The source title is retained; review it before use.',
+  "标题不能为空": "Title cannot be empty",
+  "正文不能为空": "Body cannot be empty",
+  "规划生成失败，暂用示意方案；请核对图片内容。": "Planning failed. A placeholder plan is being used; please review the images.",
+  "图片规划不完整，已补入示意方案；请核对图片内容。": "The image plan was incomplete. Placeholder plans were added; please review the images.",
+
   // 请求与文件
   未授权: 'Not authorized',
   内容太大: 'The content is too large',

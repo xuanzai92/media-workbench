@@ -1,5 +1,25 @@
 // 英文词典（studio）。key 是中文原文，value 是英文。
 export const STUDIO = {
+  '本次标题、正文和配图会被替换，并再次使用模型额度。': 'This replaces the current title, text and images, and uses model credits again.',
+  "修改尚未保存，请重试后再导出或复制。": "Your changes have not been saved. Retry before exporting or copying.",
+  "已导出当前版本到 {path}：{warning}": "Current version exported to {path}: {warning}",
+  "正在绘制…": "Drawing…",
+  "待接入生图模型": "Connect an image model",
+  "标题和配图规划": "Title and image plan",
+  "全文已复制": "Full content copied",
+  "正在补图": "Generating images",
+  "成稿已就绪": "Content ready",
+  "待完善": "Needs attention",
+  "复制全文": "Copy full content",
+  "导出素材": "Export content",
+  "导出当前版本": "Export current version",
+  "核对正文并补齐图片后可准备发布": "Review the text and complete the images before preparing to publish",
+  "准备发布": "Prepare to publish",
+  "当前正文是兜底草稿，请修改并核对后确认。": "This is fallback text. Edit and review it before confirming.",
+  "确认正文可用": "Confirm text is ready",
+  "尚缺 {n} 张配图，可逐张补图，也可导出当前版本。": "{n} images still need attention. Retry individual images or export the current version.",
+  "正文不能为空": "Body cannot be empty",
+
   // 状态和类型（util.js 里的 STATUS_LABEL、KIND_LABEL）
   '大纲': 'Outline',
   '草稿': 'Draft',

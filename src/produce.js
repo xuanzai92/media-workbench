@@ -22,7 +22,7 @@ function count(value, min, max, fallback) {
 function contentSettings(settings, job) {
   return {
     ...settings,
-    imageCount: count(job.imageCount, 0, 4, count(settings.imageCount, 0, 4, 2)),
+    imageCount: Math.max(job.format === 'image_text' ? 1 : 0, count(job.imageCount, 0, 4, count(settings.imageCount, 0, 4, 2))),
     shotCount: count(job.shotCount, 0, 12, count(settings.shotCount, 0, 12, 6)),
   }
 }
@@ -51,7 +51,7 @@ function splitTitle(markdown, fallback) {
 export function normalizePlan(plan, settings, title, format = 'video') {
   const normalized = normalizeOutputFormat(format)
   const text = (value, max = 400) => (typeof value === 'string' ? value.trim().slice(0, max) : '')
-  const images = (Array.isArray(plan?.images) ? plan.images : []).slice(0, settings.imageCount).map(row => ({ caption: text(row?.caption, 60), anchor: text(row?.anchor, 60), prompt: text(row?.prompt, 1200) })).filter(row => row.prompt)
+  const images = (Array.isArray(plan?.images) ? plan.images : []).slice(0, settings.imageCount).map(row => ({ caption: text(row?.caption, 60), anchor: normalized === 'image_text' ? '' : text(row?.anchor, 60), prompt: text(row?.prompt, 1200) })).filter(row => row.prompt)
   const shots = (Array.isArray(plan?.shots) ? plan.shots : []).slice(0, settings.shotCount).map((row, index) => ({
     no: index + 1, shot: text(row?.shot, 12) || tr('中景'), visual: text(row?.visual, 200), voice: text(row?.voice, 200),
     seconds: Number.isFinite(row?.seconds) ? Math.max(1, Math.min(60, Math.round(row.seconds))) : 5, prompt: text(row?.prompt, 1200),
@@ -148,6 +148,7 @@ export function applyRevision(production, revise, { canDraw = true } = {}) {
   }
   if (typeof revise?.article === 'string' && revise.article.trim()) {
     production.article = revise.article.replace(/^\s*#\s+.*\n?/, '').trim().slice(0, 200000)
+    // 完整改写仍需用户核对；局部修改也不能把结构草稿悄悄变成可交付稿。
     receipts.push(tr('重写了脚本'))
   } else if (Array.isArray(revise?.edits)) {
     let changed = 0
@@ -348,16 +349,28 @@ export class Producer {
       const backup = normalizePlan(fallbackPlan(item, '', content, job.format), content, item.title, job.format)
 
       let plan
+      let planNotice = null
       try {
         const prompts = planPrompts(snapshot, item, content, job.format, promptSources)
         const { text } = await this.callText({ ...prompts, maxTokens: 3000, light: true, signal: AbortSignal.any([signal, AbortSignal.timeout(TEXT_TIMEOUT_MS)]), onText: (delta) => { job.planText += delta } })
-        plan = normalizePlan(extractJson(text), content, item.title, job.format)
+        const parsed = extractJson(text)
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid content plan')
+        plan = normalizePlan(parsed, content, item.title, job.format)
+        if (typeof parsed.title !== 'string' || !parsed.title.trim()) {
+          const hasContent = plan.images.length || plan.shots.length || plan.outline.length || plan.facts.length || (typeof parsed.cover === 'string' && parsed.cover.trim())
+          if (!hasContent) throw new Error('Empty content plan')
+          planNotice = tr('规划未返回标题，已沿用素材标题；请核对后使用。')
+        }
       } catch (err) {
         if (signal.aborted) throw err
         plan = backup
+        planNotice = tr('规划生成失败，暂用示意方案；请核对图片内容。')
       }
       // 模型漏掉配图或分镜时用模板补上，流水线不能因此少一块
-      if (plan.images.length < content.imageCount) plan.images = [...plan.images, ...backup.images.slice(plan.images.length)]
+      if (plan.images.length < content.imageCount) {
+        plan.images = [...plan.images, ...backup.images.slice(plan.images.length)]
+        planNotice = [planNotice, tr('图片规划不完整，已补入示意方案；请核对图片内容。')].filter(Boolean).join(' ')
+      }
       if (job.format === 'video' && plan.shots.length < content.shotCount) plan.shots = [...plan.shots, ...backup.shots.slice(plan.shots.length).map((row, i) => ({ ...row, no: plan.shots.length + i + 1 }))]
 
       const ready = this.ready(settings)
@@ -371,6 +384,7 @@ export class Producer {
         production.shotCount = content.shotCount
         production.facts = plan.facts
         production.outline = plan.outline
+        production.planNotice = planNotice
         production.characters = plan.characters
         production.cover = job.format === 'video' ? { prompt: plan.cover, status: initial } : null
         production.images = plan.images.map(row => ({ ...row, status: initial }))
@@ -388,10 +402,11 @@ export class Producer {
           const result = await this.callText({ ...prompts, maxTokens: 6000, signal: AbortSignal.any([signal, AbortSignal.timeout(TEXT_TIMEOUT_MS)]), onText: (delta) => { job.text += delta } })
           markdown = result.text
           engine = result.model
-          if (!markdown.trim()) throw new Error(tr('模型返回了空内容'))
+          if (!splitTitle(markdown, plan.title).article.trim()) throw new Error(tr('模型返回了空内容'))
         } catch (err) {
           if (signal.aborted) throw err
-          markdown = fallbackArticle(snapshot, item)
+          engine = 'local'
+          markdown = fallbackArticle(snapshot, item, job.format)
           job.text = markdown
           notice = tr('没有连上文字模型，先给你一份结构草稿。可以到 DeepSeek Harness 设置里检查模型。')
         }
@@ -401,6 +416,7 @@ export class Producer {
           production.aiArticle = article
           production.engine = engine
           production.notice = notice
+          production.textStatus = notice ? 'fallback' : 'done'
         })
       }
 

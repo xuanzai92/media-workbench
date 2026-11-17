@@ -326,7 +326,10 @@ async function producerFixture({ callText, generate, ready = true }) {
 }
 
 async function waitDone(producer, id) {
-  for (let i = 0; i < 200 && producer.isRunning(id); i += 1) await new Promise(r => setTimeout(r, 5))
+  const active = () => producer.isRunning(id) || producer.anyAssetActive(id)
+  const deadline = Date.now() + 5000
+  while (active() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(active(), false, 'Generation and image retries must finish persisting before assertions or temporary-file cleanup')
 }
 
 const isPlan = system => system.includes('策划案')
@@ -492,7 +495,7 @@ test('Producer 一张图失败不影响其他，可以单独重画', async () =>
     assert.equal(p.shots[1].status, 'done')
     fail = false
     await producer.regenerate('seed_2', 'shot:0')
-    await new Promise(r => setTimeout(r, 40))
+    await waitDone(producer, 'seed_2')
     p = (await store.read()).items.find(i => i.id === 'seed_2').production
     assert.equal(p.shots[0].status, 'done')
     await assert.rejects(producer.regenerate('seed_2', '../x'), /目标无效/)

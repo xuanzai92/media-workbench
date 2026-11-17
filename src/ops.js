@@ -188,9 +188,16 @@ const handlers = {
     const item = state.items.find(row => row.id === op.id) ?? state.mergedDrafts?.find(row => row.id === op.id)
     if (!item) throw new Error(tr('找不到对象：{id}', { id: op.id }))
     if (!item.production) throw new Error(tr('这条灵感还没有成稿'))
+    if (typeof op.title === 'string' && !op.title.trim()) throw new Error(tr('标题不能为空'))
+    if (typeof op.article === 'string' && !op.article.trim()) throw new Error(tr('正文不能为空'))
+    if (op.textReviewed === true && !(op.article ?? item.production.article)?.trim()) throw new Error(tr('正文不能为空'))
     if (typeof op.title === 'string') item.production.title = op.title.slice(0, 200)
     if (typeof op.coverText === 'string') item.production.coverText = op.coverText.slice(0, 40)
     if (typeof op.article === 'string') item.production.article = op.article.slice(0, 200000)
+    if (op.textReviewed === true) {
+      item.production.textStatus = 'done'
+      delete item.production.notice
+    }
     return { text: tr('修改《{title}》', { title: short(item.production.title) }), target: item.id, kind: 'item' }
   },
   delete_production(state, op) {

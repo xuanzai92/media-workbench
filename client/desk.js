@@ -78,6 +78,45 @@ export async function dispatchOps(ops, { label = t('操作'), undoable = true, s
   }
 }
 
+// Blur saves must finish before copy/export reads the current draft.
+const productionEdits = new Map()
+export function updateProduction(id, patch) {
+  const edits = productionEdits.get(id) ?? { pending: Promise.resolve(), failed: new Set() }
+  edits.pending = edits.pending.then(async () => {
+    const data = await dispatchOps([{ op: 'update_production', id, ...patch }], { label: t('修改文章'), silent: true })
+    const saved = Boolean(data && !data.errors?.length)
+    for (const key of Object.keys(patch)) {
+      if (saved) edits.failed.delete(key)
+      else edits.failed.add(key)
+    }
+    return saved
+  })
+  productionEdits.set(id, edits)
+  return edits.pending
+}
+
+export function discardProductionEdit(id, patch) {
+  const edits = productionEdits.get(id)
+  if (!edits) return Promise.resolve()
+  edits.pending = edits.pending.then(() => {
+    for (const key of Object.keys(patch)) edits.failed.delete(key)
+  })
+  return edits.pending
+}
+
+export async function flushProduction(id) {
+  let pending
+  do {
+    pending = productionEdits.get(id)?.pending
+    if (pending) await pending
+  } while (pending !== productionEdits.get(id)?.pending)
+  if (productionEdits.get(id)?.failed.size) {
+    toast(t('修改尚未保存，请重试后再导出或复制。'), { error: true })
+    return null
+  }
+  return snapshot.state?.items?.find(row => row.id === id)?.production ?? snapshot.state?.mergedDrafts?.find(row => row.id === id)?.production ?? null
+}
+
 export async function undo() {
   try {
     const data = await request('undo', {})
@@ -121,7 +160,9 @@ export function closeItem() {
 /** 一键成稿。任务在 Host 里跑，这里只负责启动和看进度。 */
 export async function runProduce(id, { format = 'article', references = [], imageCount, shotCount } = {}) {
   try {
+    await productionEdits.get(id)?.pending
     const data = await request('produce', { id, format, references, imageCount, shotCount })
+    productionEdits.delete(id)
     setDesk({ state: data.state })
   } catch (err) {
     report(err)
@@ -130,7 +171,9 @@ export async function runProduce(id, { format = 'article', references = [], imag
 
 export async function runProduceMerge(sourceIds, { format = 'article', references = [], draftId = null, imageCount, shotCount } = {}) {
   try {
+    await productionEdits.get(draftId)?.pending
     const data = await request('produce/merge', { sourceIds, format, references, draftId, imageCount, shotCount })
+    productionEdits.delete(data.id)
     setDesk({ state: data.state, mergedId: data.id, focusId: data.id, outputFormat: format })
     return data.id
   } catch (err) {
@@ -323,15 +366,21 @@ export async function sendChat(text) {
 
 export async function saveProduced(id) {
   try {
-    const production = snapshot.state.items.find(row => row.id === id)?.production ?? snapshot.state.mergedDrafts?.find(row => row.id === id)?.production
+    const production = await flushProduction(id)
+    if (!production) return null
     // 视频封面在浏览器里合成，一起存进文件夹
-    const videoCover = await coverDataUrl({ src: production.cover?.src, text: production.coverText || production.title }).catch(() => undefined)
+    const videoCover = !production.format || production.format === 'video'
+      ? await coverDataUrl({ src: production.cover?.src, text: production.coverText || production.title }).catch(() => undefined)
+      : undefined
     const data = await request('produce/save', { id, videoCover })
     setDesk({ state: data.state })
     if (data.markdownError) toast(t('Markdown 同步失败：{error}', { error: data.markdownError }), { error: true })
+    else if (data.warnings?.length) toast(t('已导出当前版本到 {path}：{warning}', { path: data.path, warning: data.warnings.join('；') }))
     else toast(t('已保存到 {path}', { path: data.path }))
+    return data
   } catch (err) {
     report(err)
+    return null
   }
 }
 

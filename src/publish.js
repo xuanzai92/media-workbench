@@ -1,6 +1,7 @@
 // 发布任务：把成稿整理成一次性本地交接任务，供浏览器桥接页或兼容工具读取。
 // 这里不保存 Cookie、密码或第三方长期凭据；媒体仍引用工作台自己的附件路径。
 import { newId } from './ops.js'
+import { productionMarkdown, productionReadiness } from './content-output.js'
 
 export const PUBLISH_JOB_STATUSES = [
   'ready',
@@ -38,21 +39,23 @@ function targetFor(state, id) {
 export function buildPublishSource(target) {
   const production = target?.production
   if (!production || production.status !== 'done' || !text(production.article)) return null
+  const written = ['article', 'image_text'].includes(production.format)
+  if (written && !productionReadiness(production).complete) return null
   const title = text(production.title, 200) || text(target.title, 200)
   const article = text(production.article)
   const media = [
-    asset(production.cover, 'cover'),
+    ...(!written ? [asset(production.cover, 'cover')].filter(Boolean) : []),
     ...(Array.isArray(production.images) ? production.images.map((row, index) => asset(row, 'image', index)).filter(Boolean) : []),
-    ...(Array.isArray(production.shots) ? production.shots.map((row, index) => asset(row, 'shot', index)).filter(Boolean) : []),
+    ...(!written && Array.isArray(production.shots) ? production.shots.map((row, index) => asset(row, 'shot', index)).filter(Boolean) : []),
   ]
-  if (!media.length && target.media) {
+  if (!written && !media.length && target.media) {
     const fallback = asset(target.media, target.kind === 'video' ? 'video' : 'media')
     if (fallback) media.push(fallback)
   }
   return {
     title,
     body: article,
-    markdown: `# ${title}\n\n${article}\n`,
+    markdown: written ? productionMarkdown({ ...production, title }) : `# ${title}\n\n${article}\n`,
     format: production.format || (target.kind === 'video' ? 'video' : 'article'),
     tags: Array.isArray(target.tags) ? target.tags.filter(value => typeof value === 'string').slice(0, 24) : [],
     media,

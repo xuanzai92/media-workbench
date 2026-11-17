@@ -2,7 +2,8 @@
 import React from 'react'
 import { ChatPanel } from './chat.jsx'
 import { downloadCover } from './cover.js'
-import { cancelProduce, closeItem, confirmPublish, dispatchOps, handoffPublish, openItem, preparePublish, regenAsset, revealSaved, runProduce, runProduceMerge, saveProduced, setDesk, toast, useDesk, watchProduction } from './desk.js'
+import { cancelProduce, closeItem, confirmPublish, discardProductionEdit, dispatchOps, flushProduction, handoffPublish, openItem, preparePublish, regenAsset, revealSaved, runProduce, runProduceMerge, saveProduced, setDesk, toast, updateProduction, useDesk, watchProduction } from './desk.js'
+import { articleSections, productionMarkdown, productionReadiness } from '../src/content-output.js'
 import { plural, t } from './i18n.js'
 import { Icon, IconButton } from './ui.jsx'
 import { SPRING_SNAP, SPRING_SOFT, STYLE_CATEGORIES, fmtDate, fmtWhen, reducedMotion, renderMarkdown, styleIcon, textLength, toLocalInput } from './util.js'
@@ -38,7 +39,7 @@ function ContentVisualConfig({ format, imageCount, shotCount, onChange, disabled
     <div className="md-content-visual-config">
       <span>{t('本次成稿的画面配置')}</span>
       <div className="md-field-row">
-        <label className="md-field"><span>{t('配图数量')}</span><input type="number" min="0" max="4" value={imageCount} disabled={disabled} onChange={event => onChange({ imageCount: event.target.value })} /></label>
+        <label className="md-field"><span>{t('配图数量')}</span><input type="number" min={format === 'image_text' ? 1 : 0} max="4" value={imageCount} disabled={disabled} onChange={event => onChange({ imageCount: event.target.value })} /></label>
         {format === 'video' ? <label className="md-field"><span>{t('分镜格数')}</span><input type="number" min="0" max="12" value={shotCount} disabled={disabled} onChange={event => onChange({ shotCount: event.target.value })} /></label> : null}
       </div>
       <small>{t('每条内容单独设置，保存后重新成稿时仍可调整。')}</small>
@@ -69,8 +70,9 @@ function unescapeJson(text) {
   }
 }
 
-function AutoText({ value, onCommit, className, label, disabled }) {
+function AutoText({ value, onCommit, onDiscard, className, label, disabled }) {
   const [draft, setDraft] = React.useState(value ?? '')
+  const [saving, setSaving] = React.useState(false)
   const ref = React.useRef(null)
   React.useEffect(() => setDraft(value ?? ''), [value])
   React.useLayoutEffect(() => {
@@ -80,8 +82,16 @@ function AutoText({ value, onCommit, className, label, disabled }) {
     el.style.height = `${el.scrollHeight}px`
   }, [draft])
   return (
-    <textarea ref={ref} rows={1} aria-label={label} className={className} value={draft} disabled={disabled}
-      onChange={e => setDraft(e.target.value)} onBlur={() => { if (draft.trim() && draft !== (value ?? '')) onCommit(draft) }} />
+    <textarea ref={ref} rows={1} aria-label={label} className={className} value={draft} disabled={disabled || saving}
+      onChange={e => setDraft(e.target.value)} onBlur={async () => {
+        if (!draft.trim()) { setDraft(value ?? ''); onDiscard?.(); return }
+        if (draft !== (value ?? '')) {
+          setSaving(true)
+          try { await onCommit(draft) } finally { setSaving(false) }
+        }
+      }} onKeyDown={event => {
+        if (event.key === 'Escape' && onDiscard) { event.preventDefault(); setDraft(value ?? ''); onDiscard() }
+      }} />
   )
 }
 
@@ -97,6 +107,7 @@ function Plate({ asset, paper = false, mark = null, alt = '', onOpen, onRetry })
   return (
     <div className={`md-plate ${paper ? 'is-paper' : 'is-wash'} ${clickable ? 'is-clickable' : ''}`} data-status={status} onClick={clickable ? onOpen : undefined} role={clickable ? 'button' : undefined} tabIndex={clickable ? 0 : undefined} onKeyDown={clickable ? (event) => { if (event.key === 'Enter') onOpen(event) } : undefined} aria-label={clickable ? t('查看 {name}', { name: alt }).trim() : undefined}>
       {asset?.src ? <img key={asset.src} src={asset.src} alt={alt} draggable={false} /> : mark ? <span className="md-plate-mark" aria-hidden="true">{mark}</span> : null}
+      {isBusy(asset) ? <span className="md-plate-state" role="status">{t('正在绘制…')}</span> : status === 'skipped' && !onRetry ? <span className="md-plate-state">{t('待接入生图模型')}</span> : null}
       {retry ? <button type="button" className="md-plate-failed" title={asset?.error} onClick={(event) => { event.stopPropagation(); onRetry() }}><Icon name="refresh" size={12} />{status === 'failed' ? t('没画成，重画') : t('画这张')}</button>
         : status === 'failed' ? <span className="md-plate-failed" title={asset.error}><Icon name="refresh" size={12} />{t('没画成')}</span> : null}
     </div>
@@ -109,6 +120,7 @@ function ProgressCard({ production, live, settings }) {
   const ready = settings?.imageReady
   const format = production.format ?? 'article'
   const isVideo = format === 'video'
+  const readiness = productionReadiness(production)
   const contentLabel = isVideo ? '脚本' : format === 'image_text' ? '内容' : '文章'
   const words = textLength(production.article || live?.text || '')
   const visuals = [production.cover, ...(production.images ?? [])].filter(Boolean)
@@ -120,12 +132,12 @@ function ProgressCard({ production, live, settings }) {
   const visualTotal = isVideo
     ? visuals.length || 1 + imageTotal
     : visuals.length || imageTotal
-  const visualsDone = planned && (visualTotal === 0 || (visuals.length > 0 && !visuals.some(isBusy)))
+  const visualsDone = planned && (isVideo ? (visualTotal === 0 || (visuals.length > 0 && !visuals.some(isBusy))) : !readiness.imagesMissing && !readiness.busy)
   const shotsDone = planned && (shotTotal === 0 || (shots.length > 0 && !shots.some(isBusy)))
   const steps = [
-    { label: t('标题和封面字'), done: planned, active: !planned },
-    { label: production.article ? t(`${contentLabel} {n} 字`, { n: words, s: plural(words, '', 's') }) : words ? t('正在写 {n} 字', { n: words, s: plural(words, '', 's') }) : t(contentLabel), done: Boolean(production.article), active: planned && !production.article },
-    ...(ready ? [
+    { label: t(isVideo ? '标题和封面字' : '标题和配图规划'), done: planned, active: !planned },
+    { label: production.article ? t(`${contentLabel} {n} 字`, { n: words, s: plural(words, '', 's') }) : words ? t('正在写 {n} 字', { n: words, s: plural(words, '', 's') }) : t(contentLabel), done: isVideo ? Boolean(production.article) : readiness.textReady, active: planned && !production.article },
+    ...(ready || (!isVideo && readiness.imagesTotal) ? [
       { label: t(isVideo ? '封面和配图 {done}/{total}' : '配图 {done}/{total}', { done: count(visuals), total: visualTotal }), done: visualsDone, active: visuals.some(isBusy) },
       ...(isVideo ? [{ label: t('分镜 {done}/{total}', { done: count(shots), total: shots.length || shotTotal }), done: shotsDone, active: shots.some(isBusy) }] : []),
     ] : []),
@@ -261,7 +273,8 @@ function MergedIdeaCard({ draft, sources, onGenerate, onViewSources }) {
       {!running ? <OutputFormatPicker value={format} onChange={next => setDesk({ outputFormat: next })} /> : null}
       {!running ? <ContentVisualConfig format={format} imageCount={imageCount} shotCount={shotCount} onChange={next => { if (next.imageCount !== undefined) setImageCount(next.imageCount); if (next.shotCount !== undefined) setShotCount(next.shotCount) }} /> : null}
       {canStart ? <button type="button" className="md-go" onClick={() => onGenerate(format, { imageCount: Number(imageCount), shotCount: Number(shotCount) })}>{production?.status === 'done' ? t('按此形式重新成稿') : t('确认并合并成稿')}</button> : null}
-      {running ? <ProgressCard production={{ ...production, id: draft.id }} live={null} settings={null} /> : null}
+      {running ? <ProgressCard production={{ ...production, id: draft.id }} live={null} settings={settings} /> : null}
+      {production?.status === 'failed' ? <p className="md-idea-hint is-error">{production.error}</p> : null}
       {production?.notice ? <p className="md-idea-hint">{production.notice}</p> : null}
     </div>
   )
@@ -301,7 +314,7 @@ function MergedStudio({ draft, sources, chatOpen }) {
     setDesk({ view: 'home', mode: 'scatter', focusId: null, focusIds: [], selectedIds: [], mergedId: null, outputFormat: null, sheetOrigin: null, studioDock: false, related: { query: t('来源灵感'), ids: sourceIds, newId: null } })
   }, [sourceIds])
   const generate = React.useCallback((format, counts = {}) => runProduceMerge(draft.sourceIds, { format, draftId: draft.id, ...counts }), [draft.id, draft.sourceIds])
-  const item = React.useMemo(() => ({ ...sources[0], id: draft.id, title: production?.title || draft.title, body: mergedSourceContext(sources), production, sourceIds: draft.sourceIds, _merged: true }), [draft.id, draft.sourceIds, draft.title, production, sources])
+  const item = React.useMemo(() => ({ ...draft, title: production?.title || draft.title, body: mergedSourceContext(sources), production, _merged: true }), [draft, production, sources])
   React.useEffect(() => {
     if (running || [production?.cover, ...(production?.images ?? []), ...(production?.shots ?? [])].some(isBusy)) return watchProduction(draft.id)
     return undefined
@@ -318,7 +331,7 @@ function MergedStudio({ draft, sources, chatOpen }) {
             </>
           )}
           top={<MergedIdeaCard draft={draft} sources={sources} onGenerate={generate} onViewSources={viewSources} />}
-          suggestions={production?.status === 'done' ? DONE_SUGGESTIONS.map(row => t(row)) : []}
+          suggestions={production?.status === 'done' ? (production.format === 'video' ? DONE_SUGGESTIONS : DONE_SUGGESTIONS.slice(0, 3)).map(row => t(row)) : []}
           placeholder={running ? t('正在成稿，马上就好') : t('想怎么改，直接说')}
           disabled={running}
           intro={false}
@@ -491,35 +504,89 @@ function HeroTile({ item, live, onView }) {
   )
 }
 
-/** 把配图插回文章：优先放到对应小标题那一节的末尾。 */
-function ArticleBody({ production, text, onView }) {
-  const sections = React.useMemo(() => text.split(/\n(?=##\s)/).map(part => ({ text: part, heading: /^##\s+(.+)/.exec(part)?.[1]?.trim() ?? '' })), [text])
-  const settingsImageCount = useDesk(s => s.settings?.imageCount ?? 2)
-  const imageCount = production?.imageCount ?? settingsImageCount
-  // 旧的成稿可能没有保存配图规划；先按设置补出占位，避免文章结构和未来的配图位置丢失。
-  const images = production?.images?.length
-    ? production.images
-    : Array.from({ length: imageCount }, () => ({ status: 'idle', prompt: '', placeholder: true }))
-  const placed = React.useMemo(() => {
-    const map = new Map()
-    images.forEach((image, i) => {
-      if (!image || (!image.src && !image.prompt && !image.placeholder)) return
-      let at = sections.findIndex(s => image.anchor && s.heading === image.anchor)
-      if (at < 0) at = Math.min(sections.length - 1, Math.round(((i + 1) * sections.length) / (images.length + 1)))
-      if (!map.has(at)) map.set(at, [])
-      map.get(at).push({ image, i })
-    })
-    return map
-  }, [images, sections])
+/** Written formats share actions and completion checks, including merged drafts. */
+function WrittenToolbar({ item }) {
+  const production = item.production
+  const readiness = productionReadiness(production)
+  const imageReady = useDesk(s => s.settings?.imageReady)
+  const job = useDesk(s => s.publishJobs[item.id])
+  const [saving, setSaving] = React.useState(false)
+  const [publishing, setPublishing] = React.useState(false)
+  const [receipt, setReceipt] = React.useState(null)
+  const copy = async () => {
+    const current = await flushProduction(item.id)
+    if (!current) return
+    try {
+      await navigator.clipboard.writeText(productionMarkdown(current))
+      toast(t('全文已复制'))
+    } catch (err) { toast(err.message, { error: true }) }
+  }
+  const save = async () => {
+    setSaving(true)
+    try { setReceipt(await saveProduced(item.id)) } finally { setSaving(false) }
+  }
+  const publish = async () => {
+    setPublishing(true)
+    const opened = window.open('', '_blank')
+    try {
+      const current = await flushProduction(item.id)
+      if (!current || !productionReadiness(current).complete) { opened?.close(); return }
+      const prepared = await preparePublish(item.id)
+      if (!prepared) { opened?.close(); return }
+      await handoffPublish(item.id, opened)
+    } finally { setPublishing(false) }
+  }
+  const review = async () => {
+    if (await flushProduction(item.id)) await updateProduction(item.id, { textReviewed: true })
+  }
+  const again = () => setDesk({ dialog: {
+    title: t('重新成稿'), submitLabel: t('重新生成'),
+    fields: [{ name: 'note', label: t('本次标题、正文和配图会被替换，并再次使用模型额度。'), type: 'hidden' }],
+    onSubmit: () => item._merged
+      ? runProduceMerge(item.sourceIds, { draftId: item.id, format: production.format, imageCount: production.imageCount })
+      : runProduce(item.id, { format: production.format, imageCount: production.imageCount }),
+  } })
+  return (
+    <section className="md-written-toolbar">
+      <div className="md-written-summary">
+        <span>{outputFormatLabel(production.format)} · {t('{n} 字', { n: textLength(production.article), s: plural(textLength(production.article), '', 's') })}</span>
+        <span role="status">{t(readiness.busy ? '正在补图' : readiness.complete ? '成稿已就绪' : '待完善')} · {t('配图 {done}/{total}', { done: readiness.imagesDone, total: readiness.imagesTotal })}</span>
+      </div>
+      <AutoText className="md-written-title" label={t('标题')} value={production.title} onCommit={title => updateProduction(item.id, { title })} onDiscard={() => discardProductionEdit(item.id, { title: production.title })} />
+      <div className="md-hero-actions">
+        <button type="button" className="md-pill" onClick={copy}><Icon name="copy" size={14} />{t('复制全文')}</button>
+        <button type="button" className="md-pill is-primary" disabled={saving || readiness.busy} onClick={save}><Icon name="save" size={14} />{t(saving ? '保存中…' : readiness.complete ? '导出素材' : '导出当前版本')}</button>
+        <label className="md-pill md-date-pill"><Icon name="calendar" size={14} />{item.scheduledAt ? fmtWhen(item.scheduledAt) : t('排期')}
+          <input type="datetime-local" aria-label={t('排期')} value={toLocalInput(item.scheduledAt)} onChange={event => dispatchOps([{ op: 'schedule_item', id: item.id, scheduledAt: event.target.value ? new Date(event.target.value).toISOString() : null }], { label: t('修改排期'), silent: true })} />
+        </label>
+        <button type="button" className="md-pill" disabled={publishing || !readiness.complete} title={!readiness.complete ? t('核对正文并补齐图片后可准备发布') : undefined} onClick={publish}><Icon name="send" size={14} />{t(publishing ? '准备发布…' : '准备发布')}</button>
+        {production.savedAt ? <IconButton icon="folder" label={t('打开保存的文件夹')} onClick={() => revealSaved(item.id)} /> : null}
+        <IconButton icon="refresh" label={t('重新成稿')} disabled={readiness.busy} onClick={again} />
+      </div>
+      {readiness.textDraft ? <div className="md-written-notice" role="status"><span>{t('当前正文是兜底草稿，请修改并核对后确认。')}</span><button type="button" className="md-link-btn" onClick={review}>{t('确认正文可用')}</button></div> : null}
+      {production.planNotice ? <p className="md-written-notice">{production.planNotice}</p> : null}
+      {readiness.imagesMissing > 0 ? <div className="md-written-notice" role="status"><span>{t('尚缺 {n} 张配图，可逐张补图，也可导出当前版本。', { n: readiness.imagesMissing })}</span>{!imageReady ? <button type="button" className="md-link-btn" onClick={() => setDesk({ settingsOpen: true })}>{t('去接入')}</button> : null}</div> : null}
+      {receipt ? <div className="md-written-receipt" role="status"><span>{t('已保存到 {path}', { path: receipt.path })}</span>{receipt.warnings?.map(warning => <p key={warning}>{warning}</p>)}</div> : null}
+      <PublishState item={item} job={job} />
+    </section>
+  )
+}
+
+/** 把配图插回文章：预览、复制和导出使用相同的定位规则。 */
+function ArticleBody({ item, production, text, onView }) {
+  const imageReady = useDesk(s => s.settings?.imageReady)
+  const images = production?.images ?? []
+  const sections = articleSections(text, images)
   return (
     <div className="md-article">
       {sections.map((section, index) => (
         <React.Fragment key={index}>
           {/* renderMarkdown 会先转义，模型输出里的 HTML 不会执行 */}
           <div className="md-prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(section.text) }} />
-          {(placed.get(index) ?? []).map(({ image, i }) => (
+          {section.images.map(({ image, index: i }) => (
             <figure key={i} className="md-article-figure">
-              <Plate asset={image} alt={image.caption || t('配图 {n}', { n: i + 1 })} mark={String(i + 1).padStart(2, '0')} onOpen={image.src ? () => onView(`image:${i}`) : undefined} />
+              <Plate asset={image} alt={image.caption || t('配图 {n}', { n: i + 1 })} mark={String(i + 1).padStart(2, '0')} onOpen={image.src ? () => onView(`image:${i}`) : undefined} onRetry={imageReady ? () => regenAsset(item.id, `image:${i}`) : undefined} />
+              {image.error ? <p className="md-image-error">{image.error}</p> : null}
               {image.caption ? <figcaption>{image.caption}</figcaption> : null}
             </figure>
           ))}
@@ -535,6 +602,7 @@ function ArticleTile({ item, live, open, onToggle, onView, onDelete, tileRef, he
   const scroller = React.useRef(null)
   const skipBlurSave = React.useRef(false)
   const [editing, setEditing] = React.useState(false)
+  const [saving, setSaving] = React.useState(false)
   const [picked, setPicked] = React.useState(null)
   const article = production?.article ?? ''
   const [draft, setDraft] = React.useState(article)
@@ -551,13 +619,21 @@ function ArticleTile({ item, live, open, onToggle, onView, onDelete, tileRef, he
   React.useEffect(() => {
     if (article && scroller.current) scroller.current.scrollTop = 0
   }, [Boolean(article)]) // eslint-disable-line react-hooks/exhaustive-deps
-  const save = () => {
-    if (draft !== article) dispatchOps([{ op: 'update_production', id: item.id, article: draft }], { label: t('修改文章'), silent: true })
-    setEditing(false)
+  const save = async () => {
+    if (saving) return
+    setSaving(true)
+    try {
+      if (draft !== article && !await updateProduction(item.id, { article: draft })) return
+      setEditing(false)
+    } finally { setSaving(false) }
   }
   const copy = async () => {
-    await navigator.clipboard.writeText(article)
-    toast(copiedLabel)
+    const current = await flushProduction(item.id)
+    if (!current) return
+    try {
+      await navigator.clipboard.writeText(['article', 'image_text'].includes(current.format) ? productionMarkdown(current) : current.article)
+      toast(copiedLabel)
+    } catch (err) { toast(err.message, { error: true }) }
   }
   // 选中一段，交给助手改
   const onMouseUp = () => {
@@ -579,15 +655,15 @@ function ArticleTile({ item, live, open, onToggle, onView, onDelete, tileRef, he
         <span className="md-grow" />
         {article ? (
           <>
-            {editing ? <button type="button" className="md-btn is-small" onClick={save}><Icon name="check" size={13} />{t('完成')}</button> : <IconButton icon="edit" label={t('直接修改')} onClick={() => { skipBlurSave.current = false; setEditing(true) }} />}
+            {editing ? <button type="button" className="md-btn is-small" disabled={saving} onClick={save}><Icon name="check" size={13} />{t(saving ? '保存中…' : '完成')}</button> : <IconButton icon="edit" label={t('直接修改')} onClick={() => { skipBlurSave.current = false; setEditing(true) }} />}
             <IconButton icon="copy" label={copyLabel} onClick={copy} />
-            <IconButton icon={open ? 'close' : 'expand'} label={open ? t('收起') : t('放大阅读')} onClick={onToggle} />
+            {onToggle ? <IconButton icon={open ? 'close' : 'expand'} label={open ? t('收起') : t('放大阅读')} onClick={onToggle} /> : null}
             {onDelete ? <IconButton icon="trash" label={t('删除成稿')} onClick={onDelete} /> : null}
           </>
         ) : null}
       </header>
       {editing ? (
-        <textarea className="md-article-edit" aria-label={editorLabel} value={draft} onChange={e => setDraft(e.target.value)} onBlur={() => {
+        <textarea className="md-article-edit" aria-label={editorLabel} value={draft} disabled={saving} onChange={e => setDraft(e.target.value)} onBlur={() => {
           if (skipBlurSave.current) {
             skipBlurSave.current = false
             return
@@ -601,13 +677,14 @@ function ArticleTile({ item, live, open, onToggle, onView, onDelete, tileRef, he
           if (event.key === 'Escape') {
             event.preventDefault()
             skipBlurSave.current = true
+            discardProductionEdit(item.id, { article })
             setDraft(article)
             setEditing(false)
           }
         }} />
       ) : text ? (
         <div className="md-article-scroll" ref={scroller} onMouseUp={onMouseUp} onScroll={() => setPicked(null)}>
-          {open ? <ArticleBody production={production} text={text} onView={onView} /> : <div className="md-prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />}
+          {open ? <ArticleBody item={item} production={production} text={text} onView={onView} /> : <div className="md-prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />}
         </div>
       ) : (
         <div className={`md-skeleton ${running ? '' : 'is-still'}`} aria-hidden="true">{Array.from({ length: 12 }, (_, i) => <i key={i} />)}</div>
@@ -626,6 +703,7 @@ function ArticleTile({ item, live, open, onToggle, onView, onDelete, tileRef, he
 
 function ImageTextTile({ item, onView }) {
   const images = item.production?.images ?? []
+  const imageReady = useDesk(s => s.settings?.imageReady)
   return (
     <section className="md-tile md-image-text-tile">
       <header className="md-tile-head">
@@ -635,7 +713,8 @@ function ImageTextTile({ item, onView }) {
       <div className="md-image-text-grid">
         {images.map((image, index) => (
           <figure key={index}>
-            <Plate asset={image} alt={image.caption || t('配图 {n}', { n: index + 1 })} onOpen={image.src ? () => onView(`image:${index}`) : undefined} mark={String(index + 1).padStart(2, '0')} />
+            <Plate asset={image} alt={image.caption || t('配图 {n}', { n: index + 1 })} onOpen={image.src ? () => onView(`image:${index}`) : undefined} mark={String(index + 1).padStart(2, '0')} onRetry={imageReady ? () => regenAsset(item.id, `image:${index}`) : undefined} />
+            {image.error ? <p className="md-image-error">{image.error}</p> : null}
             {image.caption ? <figcaption>{image.caption}</figcaption> : null}
           </figure>
         ))}
@@ -820,8 +899,9 @@ function Sheet({ item, live, formatOverride }) {
   if (format === 'article' || format === 'image_text') {
     return (
       <main className={`md-format-sheet md-format-${format}`}>
+        <WrittenToolbar item={item} />
         <section className="md-format-article" ref={el => { articleRef.current = el }}>
-          <ArticleTile item={item} live={live} heading={format === 'image_text' ? '内容' : '文章'} open={format === 'article'} onToggle={() => {}} onView={setViewing} onDelete={item.production ? deleteDraft : null} tileRef={articleRef} />
+          <ArticleTile item={item} live={live} heading={format === 'image_text' ? '内容' : '文章'} open={format === 'article'} onView={setViewing} onDelete={item.production ? deleteDraft : null} tileRef={articleRef} />
         </section>
         {format === 'image_text' ? <ImageTextTile item={item} onView={setViewing} /> : null}
         {viewing ? <Viewer item={item} target={viewing} onChange={setViewing} onClose={() => setViewing(null)} /> : null}
@@ -921,7 +1001,7 @@ export function Studio() {
             </>
           )}
           top={<IdeaCard item={item} live={live} settings={settings} />}
-          suggestions={production?.status === 'done' ? DONE_SUGGESTIONS.map(row => t(row)) : []}
+          suggestions={production?.status === 'done' ? (production.format === 'video' ? DONE_SUGGESTIONS : DONE_SUGGESTIONS.slice(0, 3)).map(row => t(row)) : []}
           placeholder={running ? t('正在成稿，马上就好') : production?.status === 'done' ? t('想怎么改，直接说') : t('补充点想法，或者直接说要什么')}
           disabled={running}
           intro={false}

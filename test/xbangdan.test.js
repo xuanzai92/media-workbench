@@ -12,7 +12,7 @@ function response(body, init = {}) {
 
 test('xbangdan：读取公开榜单并统一作品字段', async () => {
   const calls = []
-  const updated = Math.floor(Date.parse('2026-11-12T08:00:00Z') / 1000)
+  const updated = Math.floor(Date.now() / 1000)
   const fetchImpl = async (url, init) => {
     calls.push({ url: String(url), init })
     return response({
@@ -30,7 +30,7 @@ test('xbangdan：读取公开榜单并统一作品字段', async () => {
   assert.match(calls[0].url, /^https:\/\/xbangdan\.com\/hot\.json\?t=/)
   assert.equal(calls[0].init.method, 'GET')
   assert.equal(result.source, 'xbangdan.com')
-  assert.equal(result.updated, '2026-11-12T08:00:00.000Z')
+  assert.equal(result.updated, new Date(updated * 1000).toISOString())
   assert.equal(result.rows.length, 1)
   assert.deepEqual(result.rows[0], {
     id: '1234567890',
@@ -45,14 +45,15 @@ test('xbangdan：读取公开榜单并统一作品字段', async () => {
     interactions: 320,
     likes: 280,
     age: 2,
-    publishedAt: '2026-11-12T06:00:00.000Z',
+    publishedAt: new Date((updated - 2 * 3600) * 1000).toISOString(),
     url: 'https://x.com/maker_one/status/1234567890',
   })
 })
 
 test('xbangdan：曝光榜和赛道筛选使用对应字段', async () => {
+  const updated = Math.floor(Date.now() / 1000)
   const fetchImpl = async () => response({
-    updated: 1_800_000_000,
+    updated,
     rate: [],
     views: [{ id: '1234567892', h: 'maker_three', n: '作者三', t: '曝光内容', c: 'growth', v: 90000, age: 1 }],
   })
@@ -60,7 +61,48 @@ test('xbangdan：曝光榜和赛道筛选使用对应字段', async () => {
   assert.equal(result.rows[0].section, 'views')
   assert.equal(result.rows[0].category, 'growth')
   assert.equal(result.rows[0].exposure, 90000)
-  assert.equal(result.rows[0].publishedAt, '2027-01-15T07:00:00.000Z')
+  assert.equal(result.rows[0].publishedAt, new Date((updated - 3600) * 1000).toISOString())
+})
+
+test('xbangdan：主站被拦截时使用可用的备用榜单', async () => {
+  const calls = []
+  const updated = Math.floor(Date.now() / 1000)
+  const result = await fetchXbangdan({}, async url => {
+    calls.push(String(url))
+    if (calls.length === 1) return response({}, { status: 403 })
+    return response({ updated, rate: [{ id: '1234567890', h: 'maker', t: '内容', age: 1 }], views: [] })
+  })
+  assert.match(calls[1], /^https:\/\/x-track\.jedeeai\.com\/hot\.json\?t=/)
+  assert.equal(result.rows[0].text, '内容')
+})
+
+test('xbangdan：不展示过期或格式错误的备用榜单', async () => {
+  const updated = Math.floor(Date.now() / 1000)
+  for (const badFeed of [
+    { updated: updated - 7 * 3600, rate: [], views: [] },
+    { updated: updated + 3600, rate: [], views: [] },
+    { updated, rate: [], views: {} },
+    { rate: [], views: [] },
+  ]) {
+    let calls = 0
+    await assert.rejects(fetchXbangdan({}, async () => {
+      calls++
+      return calls === 1 ? response({}, { status: 403 }) : response(badFeed)
+    }), /备用数据源.*(过期|格式异常)/)
+    assert.equal(calls, 2)
+  }
+})
+
+test('xbangdan：主站数据过期时也会尝试备用榜单', async () => {
+  const updated = Math.floor(Date.now() / 1000)
+  let calls = 0
+  const result = await fetchXbangdan({}, async () => response({
+    updated: ++calls === 1 ? updated - 7 * 3600 : updated,
+    rate: [],
+    views: [],
+  }))
+  assert.equal(calls, 2)
+  assert.equal(result.updated, new Date(updated * 1000).toISOString())
 })
 
 test('xbangdan：拒绝无效筛选和上游错误', async () => {

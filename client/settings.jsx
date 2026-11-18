@@ -14,6 +14,11 @@ const PRESETS = [
   { id: 'custom', label: '其他自定义', baseUrl: '', model: '', size: '1024x1024', quality: '', extra: '' },
 ]
 
+function validPresetLength(value, min, max) {
+  const length = Number(value)
+  return String(value).trim() !== '' && Number.isInteger(length) && length >= min && length <= max
+}
+
 export function SettingsDialog() {
   useLang()
   const open = useDesk(s => s.settingsOpen)
@@ -25,7 +30,7 @@ export function SettingsDialog() {
   React.useEffect(() => {
     if (!open || !settings) return
     const { image } = settings
-    setForm({ source: image.source ?? 'http', baseUrl: image.baseUrl, model: image.model, apiKey: '', size: image.size, quality: image.quality, toolSize: image.toolSize ?? '1536x1024', toolQuality: image.toolQuality ?? '', extra: image.extra, workspaceDir: settings.workspaceDir ?? '', redfoxApiKey: '' })
+    setForm({ source: image.source ?? 'http', baseUrl: image.baseUrl, model: image.model, apiKey: '', size: image.size, quality: image.quality, toolSize: image.toolSize ?? '1536x1024', toolQuality: image.toolQuality ?? '', extra: image.extra, workspaceDir: settings.workspaceDir ?? '', redfoxApiKey: '', imageTextTargetLength: settings.imageTextTargetLength ?? 450, articleTargetLength: settings.articleTargetLength ?? 1400 })
     setSample(null)
   }, [open, settings])
   if (!open || !form) return null
@@ -34,12 +39,16 @@ export function SettingsDialog() {
   const payload = () => ({
     image: { source: form.source, baseUrl: form.baseUrl, model: form.model, apiKey: form.apiKey, size: form.size, quality: form.quality, toolSize: form.toolSize, toolQuality: form.toolQuality, extra: form.extra },
     redfox: { apiKey: form.redfoxApiKey },
+    imageTextTargetLength: Number(form.imageTextTargetLength),
+    articleTargetLength: Number(form.articleTargetLength),
   })
+  const lengthsValid = validPresetLength(form.imageTextTargetLength, 100, 2000) && validPresetLength(form.articleTargetLength, 300, 6000)
   const activePreset = PRESETS.find(p => p.baseUrl && p.baseUrl === form.baseUrl)?.id ?? (form.baseUrl ? 'custom' : null)
   return (
     <Dialog title={t('设置')} onClose={close} width={520}>
       <form className="md-form" onSubmit={async (event) => {
         event.preventDefault()
+        if (!lengthsValid) return
         if (form.workspaceDir.trim() && form.workspaceDir.trim() !== settings.workspaceDir) {
           if (!(await saveWorkspace(form.workspaceDir.trim()))) return
         }
@@ -63,6 +72,22 @@ export function SettingsDialog() {
           <small>{t('采集灵感和生成内容会自动保存；这个按钮会读取 Obsidian 内容，并把外部采集整理到“灵感”文件夹后导回工作台。')}</small>
           <small>{t('同步会读取“外部采集”“灵感”和“内容”目录，也兼容“内容选题/作者/标题.md”这类本地选题文件；没有 frontmatter 或稳定 ID 的外部 Markdown 会按路径生成稳定 ID。')}</small>
           <small>{t('“外部采集”与“灵感”位于工作台数据目录下；如果它们在项目根目录，请把工作台数据目录设置为该项目根目录。')}</small>
+        </div>
+        <div className="md-field md-default-lengths">
+          <span>{t('成稿默认字数')}</span>
+          <div className="md-field-row">
+            <label className="md-field">
+              <span>{t('图文')}</span>
+              <input type="number" min="100" max="2000" step="1" required value={form.imageTextTargetLength} aria-invalid={!validPresetLength(form.imageTextTargetLength, 100, 2000)} onChange={event => set('imageTextTargetLength', event.target.value)} />
+              <small>{t('范围：100–2000 字')}</small>
+            </label>
+            <label className="md-field">
+              <span>{t('文章')}</span>
+              <input type="number" min="300" max="6000" step="1" required value={form.articleTargetLength} aria-invalid={!validPresetLength(form.articleTargetLength, 300, 6000)} onChange={event => set('articleTargetLength', event.target.value)} />
+              <small>{t('范围：300–6000 字')}</small>
+            </label>
+          </div>
+          <small>{t('新成稿会使用这些字数，每篇成稿时仍可单独调整。')}</small>
         </div>
         <label className="md-field">
           <span>{t('RedFox API Key')}{settings.redfox?.hasKey ? t('（已保存，末四位 {hint}）', { hint: settings.redfox.keyHint }) : ''}</span>
@@ -132,7 +157,7 @@ export function SettingsDialog() {
         <div className="md-form-foot">
           <span style={{ flex: 1 }} />
           <button type="button" className="md-btn" onClick={close}>{t('取消')}</button>
-          <button type="submit" className="md-btn is-primary">{t('保存')}</button>
+          <button type="submit" className="md-btn is-primary" disabled={!lengthsValid}>{t('保存')}</button>
         </div>
       </form>
     </Dialog>

@@ -1,240 +1,74 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-en-dark.webp">
-    <img src="docs/assets/hero-en-light.webp" alt="Media Workbench: from one idea to a finished post" width="100%">
-  </picture>
-</p>
+<p align="center"><img src="docs/assets/hero-en-light.webp" alt="Media Workbench" width="100%"></p>
 
-<h1 align="center">Media Workbench</h1>
+# Media Workbench
 
-<p align="center"><b>A DeepSeek Harness content workspace: capture ideas, draft content, schedule posts and review results in one place.</b></p>
+Media Workbench is a DeepSeek Harness plugin for discovering topics, collecting ideas, creating content, scheduling publication, and reviewing performance. It works with the desktop and web versions. The current interface is in Chinese.
 
-<p align="center">
-  <a href="#get-started">Install</a> ·
-  <a href="#features">Features</a> ·
-  <a href="#models-and-services">Models and services</a> ·
-  <a href="#faq">FAQ</a> ·
-  <a href="README.md">简体中文</a>
-</p>
-
-<p align="center">
-  <img alt="DeepSeek Harness plugin" src="https://img.shields.io/badge/DeepSeek%20Harness-plugin-111?style=flat-square">
-  <img alt="Desktop and web" src="https://img.shields.io/badge/Desktop-web-111?style=flat-square">
-  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/MIT-open%20source-111?style=flat-square"></a>
-</p>
-
-<br>
-
-## What it is
-
-Media Workbench is a content workspace that runs in the DeepSeek Harness sidebar. Save an idea, a link or a piece of media, then generate an article, an image post or a video script. Edit and export the piece, schedule it on the calendar and review its performance later.
-
-The interface is available in English and Chinese. It works in the desktop and web versions, and keeps your data on your computer unless you configure an external service.
+[中文](README.md) · [Features](#features) · [Installation](#installation) · [Configuration and data](#configuration-and-data) · [Development](#development)
 
 ## Features
 
-### Draft a complete piece in one click
+- **Trends and rankings:** Browse AI Hot news and trending stories, popular posts on X, and RedFox rankings for Xiaohongshu and Douyin. Filter results and save or collect items as ideas. RedFox rankings currently use the Digital & Technology category.
+- **Ideas:** Save notes, quotes, links, images, and videos. Browse, filter, and organize them on a free-form canvas or in a feed; discover related ideas and combine multiple ideas into one draft.
+- **Creation:** Turn ideas into articles, image posts, or video scripts. Articles include a title, full text, and inline images; image posts include a title, short copy, and ordered images; video creation includes a spoken script, cover, and storyboard. Edit, request changes in chat, undo edits, and retry individual images.
+- **Content management and export:** Search, sort, and manage content status in a board or table. Copy full articles and image posts or export them as Markdown with images; export video scripts, covers, and storyboards. The workbench flags fallback text, missing images, and individual image failures, and can export the current version before all issues are resolved.
+- **Scheduling and publishing handoff:** Drag ideas or drafts onto the calendar. Completed drafts can be handed off to Aibeike; select the platform and finish publishing there. If the extension does not receive the handoff, copy the content and media links instead.
+- **Insights:** Enter metrics manually, paste CSV data, or import public data from your own account to review trends, platform distribution, and content performance. Learn writing rules from the data.
+- **Style and assistant:** Use or edit style presets, or extract a personal style from text, links, or a public account. Manage writing rules and export them as a Skill. The side assistant can answer questions about the workbench and help with actions.
+- **Local Markdown:** Store ideas, drafts, and attachments locally in a configurable data directory, sync with Obsidian, and import Markdown from `外部采集/`.
 
-<table>
-<tr>
-<td width="62%">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/f-studio-en-dark.webp">
-    <img src="docs/assets/f-studio-en-light.webp" width="100%" alt="The studio: chat on the left; title, cover, script and a six-frame storyboard on the right">
-  </picture>
-</td>
-<td valign="top">
-<p><b>Generate the whole structure.</b></p>
-<p>Articles include a title, complete prose and inline figures. Image posts include a title, short copy and an ordered image set. Video scripts, covers and storyboards remain supported.</p>
-<p><b>Ask for a change.</b></p>
-<p>Edit the title and body directly, or ask the assistant to rewrite them. Retry a failed image without regenerating the text or other images. Manual edits support undo.</p>
-<p><b>Export and use it.</b></p>
-<p>Copy the full content including its title, or export Markdown and images. Article figures match their preview placement; image posts keep numbered image order.</p>
-</td>
-</tr>
-</table>
+## Installation
 
-Articles and image posts show text readiness and the number of completed images separately. Fallback drafts, missing images and image failures remain visible. An article can contain no images; an image post needs at least one. **Export current version** remains available for partial results, with export notes describing missing assets and any retained previous images. Publishing handoff becomes available once the text is reviewed and the requested images are complete.
-
-The English interface exports `article.md` or `post.md`; the Chinese interface exports `文章.md` or `图文.md`. Each export includes numbered images and `export-notes.txt` / `导出说明.txt`. All local image files are checked before writing: missing files and remote images that have not been saved as local attachments block the export with an explanation. Repeated exports preserve user files and list the files in the current version. Any previous export files outside that version are explicitly listed, so use the current manifest when selecting files. Existing video script, cover and storyboard exports remain compatible.
-
-### Ideas, scheduling, insights and styles
-
-<table>
-<tr>
-<td valign="top" width="38%">
-<p><b>Capture ideas quickly.</b> Text, links, images, videos and quotes become cards. Use an infinite canvas or a date-sorted feed.</p>
-<p><b>Find related ideas.</b> Enter a keyword and related cards are grouped by relevance.</p>
-<p><b>Keep creating.</b> Schedule finished pieces, review trends and platform breakdowns, and turn useful patterns into writing rules.</p>
-<p><b>Choose a voice.</b> Use the built-in presets or learn an editable style card from your own posts.</p>
-</td>
-<td>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/f-home-en-dark.webp">
-    <img src="docs/assets/f-home-en-light.webp" width="100%" alt="The idea wall as a freeform canvas with the assistant open, and as a feed">
-  </picture>
-</td>
-</tr>
-</table>
-
-The workspace supports content planning for RedNote, Douyin, Bilibili, WeChat, TikTok, Instagram, YouTube and X. When a draft is finished, **Publish** creates a short-lived handoff job and opens the Aibeike handoff page. The page attempts to pass the title, body, Markdown, tags and media references to Aibeike; you then choose a platform and complete the final publish there.
-
-## Get started
-
-Requires DeepSeek Harness `0.2.1-rc.5` or later in the `0.2.x` line.
-
-**1. Install.** The package `media-workbench` is published on npm. Choose the source you want to install from:
-
-From npm (recommended):
+Requires DeepSeek Harness `>=0.2.1-rc.5 <0.3.0` and Node.js 20 or later. Install for the profiles you use:
 
 ```bash
 dsh plugin --profile desktop add media-workbench
 dsh plugin --profile web add media-workbench
 ```
 
-From the current checkout (recommended for development):
+You can also enter `media-workbench` under Plugins → Add Plugin in the desktop app. Quit the desktop app completely before installing from the command line, then reopen it; restart `dsh web` after installing for the web profile. If `dsh` is unavailable, enable the command-line tool from the desktop app menu.
 
-```bash
-dsh plugin --profile desktop add "file:/absolute/path/to/media-workbench"
-dsh plugin --profile web add "file:/absolute/path/to/media-workbench"
+Open Media Workbench from the sidebar. The first launch includes sample data, which you can clear using the sample-data button. To update, run the installation command again; to uninstall, replace `add` with `remove`. Uninstalling the plugin does not delete your content.
+
+For local development, install the checkout with `dsh plugin --profile web add "file:/absolute/path/media-workbench"`. The npm release may differ from the current repository code.
+
+## Configuration and data
+
+Choose a data directory in the workbench settings and configure external services as needed:
+
+| Purpose | Configuration and limitations |
+| --- | --- |
+| Text generation | Uses the text model configured in DeepSeek Harness; when unavailable, a fallback outline is generated for review. |
+| Image generation | Configure an OpenAI-compatible `/images/generations` API or use a supported DSH image tool. Text generation remains available without an image service. |
+| Account imports and social rankings | Configure a [RedFox API key](https://redfox.hk/apis?source=doc). Account imports support public data from Xiaohongshu, Douyin, Bilibili, TikTok, Instagram, and X; available fields and costs depend on the service. |
+
+The default data directory is `~/.dsh/media-workbench/` and can be changed in settings. Its main contents are:
+
+```text
+外部采集/          Incoming external Markdown
+灵感/<id>.md       Ideas
+内容/<id>/内容.md  Drafts
+attachments/       Images, videos, and other attachments
+state.json         Workbench state
 ```
 
-From GitHub:
+The workbench syncs ideas and drafts to Markdown. Open the workbench or select “Sync local Obsidian content” in settings to read local changes. Files in `外部采集/` move to `灵感/` after a successful import; failed files remain for retry. Imports from `内容选题/<author>/*.md` are also supported. The entire data directory can be used as an Obsidian vault. Deleting an idea or draft in the workbench also deletes its corresponding Markdown file or draft directory.
 
-```bash
-dsh plugin --profile desktop add github:xuanzai92/media-workbench
-dsh plugin --profile web add github:xuanzai92/media-workbench
-```
-
-A GitHub install runs `prepare` locally to build the browser half at `dist/client.js`. If pnpm asks you to allow the build, add this to `$DSH_HOME/profiles/<profile>/pnpm-workspace.yaml` and run the install again:
-
-```yaml
-allowBuilds:
-  media-workbench: true
-```
-
-You can also run `npm pack` in the repository and install the resulting tarball. The tarball already contains the built browser half:
-
-```bash
-npm pack
-dsh plugin --profile web add "file:/absolute/path/to/media-workbench-1.0.2.tgz"
-```
-
-The desktop Plugins → Add plugin flow can also accept `media-workbench`.
-
-Quit the desktop app completely (⌘Q) before installing and reopen it afterwards. For the web version, restart `dsh web`. If the `dsh` command is not available, enable it from the desktop app menu.
-
-**2. Open.** Media Workbench appears in the sidebar. The first launch includes sample data; clear it from the top right when you are ready to use your own content.
-
-**3. Update or uninstall.** Run the install command again to update. Replace `add` with `remove` to uninstall.
-
-```bash
-dsh plugin --profile desktop remove media-workbench
-```
-
-Uninstalling does not delete your content. State, settings and imported media are stored in `~/.dsh/media-workbench/` by default and can be moved in Settings. The workbench automatically manages `外部采集/`, `灵感/`, `内容/`, and `attachments/` under that root, so there is no separate draft export path to configure.
-
-### Local Markdown and Obsidian
-
-The workspace directory is a local folder on this computer. When you leave it empty, Media Workbench uses `~/.dsh/media-workbench/`; a custom path is stored in a small location pointer while the actual data stays in the folder you chose. The main files are:
-
-- `state.json`: internal runtime state and undo data.
-- `attachments/`: uploaded images, covers, figures, and storyboard files. Legacy `files/` assets are copied here when the workspace is read, and old links remain readable.
-- `外部采集/`: an input folder for Markdown collected by external tools or browsers. Put files in topic subfolders; the first sync organizes them as inspirations and moves them into `灵感/`.
-- `灵感/<id>.md`: one Markdown file per inspiration, with its title, body, source, tags, status, and stable ID.
-- `内容/<id>/内容.md`: one folder and Markdown file per generated or merged piece. The `format` field records `article`, `image_text`, or `video`; folders are organized by content ID so a piece does not split into separate copies when its format changes.
-
-Capturing or editing an inspiration, starting a draft, and generating assets update the Markdown projection. Opening the workbench or clicking **Sync local Obsidian content** in Settings scans `外部采集/`, `灵感/`, `内容/`, and compatible `内容选题/<author>/*.md` files. `外部采集/` is a one-time input queue: Markdown files are organized into inspirations using their title, body, tags, and source, get a stable ID from their relative path when frontmatter or an ID is missing, and move into `灵感/` after the workbench has persisted them. If writing fails, the source file stays in place for the next retry. Plain Markdown files placed directly under `内容/` are imported as content, and topic files without a stable `id` get one from their relative path; `type`, `tags`, `发布渠道`, and `发布时间` are mapped when present. Root-level summaries and templates are skipped. Custom inspiration frontmatter is retained in `markdownMeta`, and custom Markdown sections in the body are preserved. Content title, body, format, source IDs, status, platform, and schedule can be synced back; existing covers, figures, and storyboard media stay in the runtime state instead of being inferred from edited tables. Relative links let you open the whole workspace directory as an Obsidian vault.
-
-All three folders live under the Settings **Workbench data directory**. If you create `外部采集/` in the project root, set the workbench data directory to that project root; the default remains `~/.dsh/media-workbench/`.
-
-The app updates the same file for the same ID instead of making a daily copy. Files remain on disk until you remove them. Deleting an inspiration in the workbench also removes `灵感/<id>.md`; deleting a generated piece removes `内容/<id>/` while keeping the original inspiration. Media files follow the workbench state and production lifecycle.
-
-## Models and services
-
-The plugin is free and open source. It ships with no API keys and uses the accounts you configure in DeepSeek Harness or in the plugin settings.
-
-| Feature | Configuration | Without it |
-| --- | --- | --- |
-| Titles, scripts and storyboard text | Your text model in DeepSeek Harness | A structural outline |
-| Covers, images and storyboard frames | An OpenAI-compatible image API or a registered DSH image tool | Text still works and the cover uses a text-only fallback |
-| Account import and analytics | A RedFox API key (optional) | Enter numbers manually or paste posts to learn a style |
-
-Image APIs use `POST {endpoint}/images/generations`. Common providers are pre-filled, and custom endpoints are supported. Image keys stay in the local `settings.json`; they are not written into content data or sent to the text model.
-
-When DSH image tools are selected, Media Workbench reuses a compatible registered image tool. If the tool or host version is unavailable, switch back to an HTTP image API.
-
-## Import your own account
-
-In Styles or Insights, click **Import account** and paste your profile link. Supported platforms include RedNote, Douyin, Bilibili, TikTok, Instagram and X. Only public content is read; the imported posts, engagement data and learned style stay in the local workspace.
-
-Add a [RedFox API Key](https://redfox.hk/apis?source=doc) in Settings before the first import. Available fields and pricing depend on RedFox and your account balance. Import only accounts you are allowed to use and follow each platform's rules.
-
-## FAQ
-
-<details>
-<summary><b>Can I use it without an image model?</b></summary>
-<br>
-
-Yes. Titles, scripts and storyboard text still work, and the cover uses a text-only fallback. Connect an image model to generate covers, images and frames.
-
-</details>
-
-<details>
-<summary><b>Can it publish to platforms for me?</b></summary>
-<br>
-
-Click **Publish** on a finished draft to start the Aibeike handoff. The workspace creates a one-time job valid for 15 minutes, opens a same-origin handoff page, and attempts to pass the title, body, Markdown, tags and media references through the Chrome extension message channel. You still choose the platform and complete the final publish in Aibeike. If the extension does not accept the message, the handoff page provides copy buttons and media links as a fallback. Platform cookies and passwords are never stored by the workspace.
-
-</details>
-
-<details>
-<summary><b>Does my data go to the cloud?</b></summary>
-<br>
-
-State, settings and imported media stay on your computer by default. Only the external model, image or RedFox service you configure receives the data needed for its request.
-
-</details>
-
-<details>
-<summary><b>Is this an official DeepSeek product?</b></summary>
-<br>
-
-No. Media Workbench is an independently maintained community plugin.
-
-</details>
+State, settings, and media are stored locally. When you use models, rankings, account imports, or the publishing handoff, relevant data is sent to the corresponding service. Image and RedFox keys are stored in local settings. Export checks local images first; missing files or external images not yet saved as local attachments block export.
 
 ## Development
 
 ```bash
 npm install
-npm test                   # host logic tests
-npm run build              # build client/dist
-npm run watch              # rebuild when client/ changes
-scripts/dev-sandbox.sh     # run the web version in an isolated DSH_HOME
-node scripts/mock-llm.mjs  # use local mock models without quota
-npm pack                   # create the installable tgz
+npm test
+npm run build             # Build dist/client.js
+npm run watch
+scripts/dev-sandbox.sh    # Start the web app with an isolated DSH_HOME
+node scripts/mock-llm.mjs # Use a local mock model
 ```
 
-| Path | Contents |
-| --- | --- |
-| `client/` | UI: ideas, studio, chat, content, schedule, insights, styles and settings |
-| `src/` | Host routes, drafting pipeline, prompts, image generation, style learning, account import and local storage |
-| `scripts/` | Bundling, sandbox, mock models and sample asset generation |
-| `assets/` | Sample images and videos |
-| `docs/assets/` | README screenshots |
-| `test/` | Host, i18n, image and import tests |
+`client/` contains the interface, `src/` the Host and application logic, and `test/` the tests. Restart DeepSeek Harness after Host changes; rebuild and refresh after interface changes.
 
-Restart DeepSeek Harness after changing `src/`. The Host route prefix is `/media-workbench/`, and local uploads and generated media use `media-workbench/attachments/...` URIs; legacy `media-workbench/files/...` URIs remain readable.
+[Report an issue](https://github.com/xuanzai92/media-workbench/issues) · [Report a security issue](https://github.com/xuanzai92/media-workbench/security/advisories/new) · [MIT License](LICENSE)
 
-## Feedback and security
-
-- Project: [github.com/xuanzai92/media-workbench](https://github.com/xuanzai92/media-workbench)
-- Issues: [GitHub Issues](https://github.com/xuanzai92/media-workbench/issues)
-- Security: report privately through [Security Advisories](https://github.com/xuanzai92/media-workbench/security/advisories/new)
-
-Every route is authenticated by the host. Model output and fetched content are reduced to the fields the app needs and length-limited, operations are allow-listed, and external links cannot reach localhost or private networks.
-
-<br>
-
-<p align="center"><sub><a href="LICENSE">MIT</a> · A community plugin, not affiliated with DeepSeek. DeepSeek Harness and its marks belong to their respective owners.</sub></p>
+This is an independently maintained community plugin and is not affiliated with DeepSeek.

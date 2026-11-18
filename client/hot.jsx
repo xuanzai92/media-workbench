@@ -285,7 +285,7 @@ export function HotView() {
   }, [selected, storyRefreshKey])
 
   const saveItem = async (item) => {
-    const url = externalLink(item.links?.aihot)
+    const url = externalLink(item.links?.original) || externalLink(item.links?.aihot)
     if (!url) return
     const body = [item.summary, item.reason ? `${t('推荐理由')}：${item.reason}` : ''].filter(Boolean).join('\n\n')
     await dispatchOps([{

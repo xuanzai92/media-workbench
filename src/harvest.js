@@ -24,14 +24,20 @@ function isPrivateAddress(address) {
   return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
 }
 
+function unsafeUrlError(message) {
+  const error = new Error(tr(message))
+  error.code = 'UNSAFE_SOURCE_URL'
+  return error
+}
+
 /** 粘贴的链接可能来自任何地方，不能让它访问本机或内网服务。 */
 export async function assertPublicUrl(raw) {
   const url = new URL(raw)
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(tr('只支持 http 和 https 链接'))
   const host = url.hostname.replace(/^\[|\]$/g, '')
-  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) throw new Error(tr('不能抓取本机地址'))
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) throw unsafeUrlError('不能抓取本机地址')
   const records = isIP(host) ? [{ address: host }] : await lookup(host, { all: true })
-  if (records.some(record => isPrivateAddress(record.address))) throw new Error(tr('不能抓取内网地址'))
+  if (records.some(record => isPrivateAddress(record.address))) throw unsafeUrlError('不能抓取内网地址')
   return url
 }
 

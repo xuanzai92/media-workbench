@@ -47,6 +47,32 @@ function ContentVisualConfig({ format, imageCount, shotCount, onChange, disabled
   )
 }
 
+function defaultTargetLength(format, production = null, settings = null) {
+  if (format === 'video') return ''
+  return production?.format === format && production.targetLength != null
+    ? production.targetLength
+    : format === 'image_text' ? settings?.imageTextTargetLength ?? 450 : settings?.articleTargetLength ?? 1400
+}
+
+function validTargetLength(format, value) {
+  if (format === 'video') return true
+  const length = Number(value)
+  const [min, max] = format === 'image_text' ? [100, 2000] : [300, 6000]
+  return String(value).trim() !== '' && Number.isInteger(length) && length >= min && length <= max
+}
+
+function ContentLengthConfig({ format, value, onChange }) {
+  if (format === 'video') return null
+  const [min, max] = format === 'image_text' ? [100, 2000] : [300, 6000]
+  return (
+    <label className="md-field md-content-length-config">
+      <span>{t('目标字数')}</span>
+      <input type="number" min={min} max={max} step="1" value={value} onChange={event => onChange(event.target.value)} aria-invalid={!validTargetLength(format, value)} />
+      <small>{t('范围：{min}–{max} 字', { min, max })}</small>
+    </label>
+  )
+}
+
 function StylePicker({ disabled = false }) {
   const styles = useDesk(s => s.state.styles ?? [])
   const activeId = useDesk(s => s.state.activeStyleId)
@@ -155,6 +181,85 @@ function ProgressCard({ production, live, settings }) {
   )
 }
 
+function SourceMaterialRow({ material, running }) {
+  const current = useDesk(state => state.state?.items?.find(item => item.id === material.id))
+  const [editing, setEditing] = React.useState(false)
+  const [draft, setDraft] = React.useState('')
+  const [saving, setSaving] = React.useState(false)
+  const [saved, setSaved] = React.useState(false)
+  const [error, setError] = React.useState('')
+  const savedFallback = material.status === 'partial' && !material.text && Boolean(material.body)
+  const labels = { fetched: '已读取原文', partial: savedFallback ? '已用保存正文，待核对' : '完整性待核对', failed: '原文读取失败', local: '使用已保存内容' }
+  const save = async () => {
+    if (draft.length > 40000) { setError(t('灵感内容不能超过 40,000 字，请缩短后保存。')); return }
+    setError('')
+    setSaving(true)
+    try {
+      const result = await dispatchOps([{ op: 'update_item', id: material.id, body: draft }], { label: t('补充灵感内容'), silent: true })
+      if (!result || result.errors?.length) { setError(t('保存失败，请重试。')); return }
+      setEditing(false)
+      setSaved(true)
+    } finally { setSaving(false) }
+  }
+  return (
+    <details className="md-source-item">
+      <summary><strong>{material.title || t('未命名素材')}</strong><span className={['partial', 'failed'].includes(material.status) ? 'is-warning' : ''}>{t(labels[material.status] || '状态未知')}</span></summary>
+      {material.reason ? <p className="md-source-reason">{material.reason}</p> : null}
+      {['partial', 'failed'].includes(material.status) ? <p className="md-source-reason">{t(savedFallback ? '成稿已使用灵感中保存的正文，请核对原文；如有缺漏，补充后重新成稿。' : '请打开原文核对，补充到灵感后重新成稿。')}</p> : null}
+      {/^https?:\/\//i.test(material.url || '') ? <a href={material.url} target="_blank" rel="noreferrer">{t('打开原文')}</a> : null}
+      {material.body || (material.status === 'local' && material.text) ? <><h4>{t('成稿时灵感中保存的内容')}</h4><div className="md-source-text">{material.body || material.text}</div></> : null}
+      {['fetched', 'partial'].includes(material.status) && material.text && material.text !== material.body ? <><h4>{t('本次读取的原文')}</h4><div className="md-source-text">{material.text}</div></> : null}
+      {!material.body && !material.text ? <p className="md-source-reason">{t('没有可展示的正文。')}</p> : null}
+      {current ? editing ? <div className="md-source-edit">
+        <label className="md-field"><span>{t('编辑灵感内容')}</span><textarea rows={7} value={draft} disabled={running || saving} onChange={event => { setDraft(event.target.value); setError('') }} /></label>
+        {error ? <p className="md-source-warning" role="alert">{error}</p> : null}
+        <div><button type="button" className="md-pill is-small is-primary" disabled={running || saving} onClick={save}>{t(saving ? '保存中…' : '保存灵感内容')}</button><button type="button" className="md-link-btn" disabled={saving} onClick={() => { setEditing(false); setError('') }}>{t('取消')}</button></div>
+      </div> : <button type="button" className="md-link-btn md-source-edit-button" disabled={running} onClick={() => { setDraft(current.body || ''); setEditing(true); setSaved(false) }}>{t('补充灵感内容')}</button> : null}
+      {saved ? <p className="md-source-reason" role="status">{t('灵感内容已保存，重新成稿后才会使用更新后的内容。')}</p> : null}
+    </details>
+  )
+}
+
+function SourceMaterials({ materials, running }) {
+  if (!Array.isArray(materials) || !materials.length) return null
+  const needsAttention = materials.filter(material => ['partial', 'failed'].includes(material.status)).length
+  return (
+    <section className="md-source-materials" aria-label={t('本次成稿素材')}>
+      {needsAttention ? <p className="md-source-warning" role="status">{t('{n} 条素材未能确认原文完整，请查看并补充后重新成稿。', { n: needsAttention })}</p> : null}
+      <details>
+        <summary>{t('查看本次成稿素材')} <span>{t('{n} 条素材', { n: materials.length })}</span></summary>
+        <div className="md-source-list">
+          {materials.map((material, index) => <SourceMaterialRow key={material.id || index} material={material} running={running} />)}
+        </div>
+      </details>
+    </section>
+  )
+}
+
+function IdeaSourcePreview({ item, label, onViewItem }) {
+  const body = String(item.body || '').trim()
+  const url = /^https?:\/\//i.test(item.url || '') ? item.url : null
+  const meta = [item.platform && t(item.platform), item.source, item.publishedAt && fmtDate(item.publishedAt)].filter(Boolean)
+  return (
+    <details className="md-idea-source">
+      <summary>
+        <strong>{label || item.title || t('未命名素材')}</strong>
+        <span>{body || t('暂无已保存正文')}</span>
+      </summary>
+      <div className="md-idea-source-detail">
+        {label ? <strong className="md-idea-source-title">{item.title || t('未命名素材')}</strong> : null}
+        {meta.length ? <small className="md-idea-source-meta">{meta.join(' · ')}</small> : null}
+        {body ? <div className="md-source-text">{body}</div> : <p className="md-source-reason">{t('暂无已保存正文，成稿时会尝试读取原文。')}</p>}
+        {Array.isArray(item.tags) && item.tags.length ? <small className="md-idea-source-meta">{t('标签')} · {item.tags.join('、')}</small> : null}
+        <div className="md-idea-source-actions">
+          {url ? <a href={url} target="_blank" rel="noreferrer">{t('打开原文')}</a> : null}
+          {onViewItem ? <button type="button" className="md-inline-link" onClick={onViewItem}>{t('在灵感画布中查看')}</button> : null}
+        </div>
+      </div>
+    </details>
+  )
+}
+
 /** 对话栏顶部：这条灵感，以及唯一的入口。 */
 function IdeaCard({ item, live, settings }) {
   const production = item.production
@@ -163,26 +268,32 @@ function IdeaCard({ item, live, settings }) {
   const format = selectedFormat ?? production?.format ?? 'article'
   const [imageCount, setImageCount] = React.useState(production?.imageCount ?? settings?.imageCount ?? 2)
   const [shotCount, setShotCount] = React.useState(production?.shotCount ?? settings?.shotCount ?? 6)
+  const [targetLength, setTargetLength] = React.useState(defaultTargetLength(format, production, settings))
   React.useEffect(() => {
     setImageCount(production?.imageCount ?? settings?.imageCount ?? 2)
     setShotCount(production?.shotCount ?? settings?.shotCount ?? 6)
   }, [item.id, production?.imageCount, production?.shotCount, settings?.imageCount, settings?.shotCount])
+  React.useEffect(() => setTargetLength(defaultTargetLength(format, production, settings)), [item.id, format, production?.format, production?.targetLength, settings?.imageTextTargetLength, settings?.articleTargetLength])
   const countsChanged = production?.status === 'done' && (Number(imageCount) !== Number(production.imageCount ?? settings?.imageCount ?? 2) || Number(shotCount) !== Number(production.shotCount ?? settings?.shotCount ?? 6))
-  const canStart = !production || !['running', 'done'].includes(production.status) || (production.status === 'done' && ((selectedFormat && selectedFormat !== production.format) || countsChanged))
+  const lengthChanged = production?.status === 'done' && format !== 'video' && Number(targetLength) !== Number(defaultTargetLength(format, production, settings))
+  const canStart = !production || !['running', 'done'].includes(production.status) || (production.status === 'done' && ((selectedFormat && selectedFormat !== production.format) || countsChanged || lengthChanged))
   return (
     <div className="md-idea-card">
       <span className="md-idea-label">{t('灵感')} · {fmtDate(item.createdAt)}</span>
       <AutoText className="md-idea-text" label={t('灵感')} value={item.title} disabled={running} onCommit={title => dispatchOps([{ op: 'update_item', id: item.id, title }], { label: t('修改灵感'), silent: true })} />
+      <IdeaSourcePreview item={item} label={t('查看灵感正文')} />
       {!running ? (
         <StylePicker />
       ) : null}
       {!running ? <OutputFormatPicker value={format} onChange={next => setDesk({ outputFormat: next })} /> : null}
       {!running ? <ContentVisualConfig format={format} imageCount={imageCount} shotCount={shotCount} onChange={next => { if (next.imageCount !== undefined) setImageCount(next.imageCount); if (next.shotCount !== undefined) setShotCount(next.shotCount) }} /> : null}
-      {canStart ? <button type="button" className="md-go" onClick={() => runProduce(item.id, { format, imageCount: Number(imageCount), shotCount: Number(shotCount) })}>{production?.status === 'done' ? t('按此形式重新成稿') : t('确认并成稿')}</button> : null}
+      {!running ? <ContentLengthConfig format={format} value={targetLength} onChange={setTargetLength} /> : null}
+      {canStart ? <button type="button" className="md-go" disabled={!validTargetLength(format, targetLength)} onClick={() => runProduce(item.id, { format, imageCount: Number(imageCount), shotCount: Number(shotCount), targetLength: format === 'video' ? undefined : Number(targetLength) })}>{production?.status === 'done' ? t('按此形式重新成稿') : t('确认并成稿')}</button> : null}
       {running ? <ProgressCard production={{ ...production, id: item.id }} live={live} settings={settings} /> : null}
       {production?.status === 'failed' ? <p className="md-idea-hint is-error">{production.error}</p> : null}
       {!running && !settings?.imageReady ? <p className="md-idea-hint">{t(format === 'video' ? '接入生图模型后，封面、配图和分镜会画好。' : '接入生图模型后，配图会画好。')}<button type="button" onClick={() => setDesk({ settingsOpen: true })}>{t('去接入')}</button></p> : null}
       {production?.notice ? <p className="md-idea-hint">{production.notice}</p> : null}
+      <SourceMaterials materials={production?.sourceMaterials} running={running} />
     </div>
   )
 }
@@ -192,7 +303,9 @@ function BatchStudio({ items }) {
   const settings = useDesk(s => s.settings)
   const [imageCount, setImageCount] = React.useState(settings?.imageCount ?? 2)
   const [shotCount, setShotCount] = React.useState(settings?.shotCount ?? 6)
-  const start = () => runProduceMerge(items.map(item => item.id), { format, imageCount: Number(imageCount), shotCount: Number(shotCount) })
+  const [targetLength, setTargetLength] = React.useState(defaultTargetLength(format, null, settings))
+  React.useEffect(() => setTargetLength(defaultTargetLength(format, null, settings)), [format, settings?.imageTextTargetLength, settings?.articleTargetLength])
+  const start = () => runProduceMerge(items.map(item => item.id), { format, imageCount: Number(imageCount), shotCount: Number(shotCount), targetLength: format === 'video' ? undefined : Number(targetLength) })
   return (
     <div className="md-studio md-batch-studio" role="dialog" aria-label={t('批量成稿')}>
       <div className="md-studio-chat">
@@ -207,20 +320,13 @@ function BatchStudio({ items }) {
               <p>{t('AI 会提炼这些灵感的共同主题、事实和观点，合并成一篇最终内容。')}</p>
             </div>
             <div className="md-batch-list">
-              {items.map(item => (
-                <div className="md-batch-row" key={item.id}>
-                  <span className="md-dot status-idea" />
-                  <div className="md-batch-row-copy">
-                    <strong>{item.title}</strong>
-                    <small>{item.source || t('灵感')}</small>
-                  </div>
-                </div>
-              ))}
+              {items.map(item => <IdeaSourcePreview key={item.id} item={item} />)}
             </div>
             <StylePicker />
             <OutputFormatPicker value={format} onChange={next => setDesk({ outputFormat: next })} />
             <ContentVisualConfig format={format} imageCount={imageCount} shotCount={shotCount} onChange={next => { if (next.imageCount !== undefined) setImageCount(next.imageCount); if (next.shotCount !== undefined) setShotCount(next.shotCount) }} />
-            <button type="button" className="md-go" onClick={start}>{t('确认并合并成稿')}</button>
+            <ContentLengthConfig format={format} value={targetLength} onChange={setTargetLength} />
+            <button type="button" className="md-go" disabled={!validTargetLength(format, targetLength)} onClick={start}>{t('确认并合并成稿')}</button>
           </div>
         </div>
       </div>
@@ -251,12 +357,15 @@ function MergedIdeaCard({ draft, sources, onGenerate, onViewSources }) {
   const format = selectedFormat ?? production?.format ?? 'article'
   const [imageCount, setImageCount] = React.useState(production?.imageCount ?? settings?.imageCount ?? 2)
   const [shotCount, setShotCount] = React.useState(production?.shotCount ?? settings?.shotCount ?? 6)
+  const [targetLength, setTargetLength] = React.useState(defaultTargetLength(format, production, settings))
   React.useEffect(() => {
     setImageCount(production?.imageCount ?? settings?.imageCount ?? 2)
     setShotCount(production?.shotCount ?? settings?.shotCount ?? 6)
   }, [draft.id, production?.imageCount, production?.shotCount, settings?.imageCount, settings?.shotCount])
+  React.useEffect(() => setTargetLength(defaultTargetLength(format, production, settings)), [draft.id, format, production?.format, production?.targetLength, settings?.imageTextTargetLength, settings?.articleTargetLength])
   const countsChanged = production?.status === 'done' && (Number(imageCount) !== Number(production.imageCount ?? settings?.imageCount ?? 2) || Number(shotCount) !== Number(production.shotCount ?? settings?.shotCount ?? 6))
-  const canStart = !running && (!production || production.status !== 'done' || ((selectedFormat && selectedFormat !== production.format) || countsChanged))
+  const lengthChanged = production?.status === 'done' && format !== 'video' && Number(targetLength) !== Number(defaultTargetLength(format, production, settings))
+  const canStart = !running && (!production || production.status !== 'done' || ((selectedFormat && selectedFormat !== production.format) || countsChanged || lengthChanged))
   return (
     <div className="md-idea-card md-merged-idea-card">
       <span className="md-idea-label">{t('合并成稿')} · {t('已选 {n} 条灵感', { n: sources.length })}</span>
@@ -266,16 +375,18 @@ function MergedIdeaCard({ draft, sources, onGenerate, onViewSources }) {
           <span>{t('来源灵感')} · {t('{n} 个来源', { n: sources.length })}</span>
           <button type="button" className="md-inline-link" onClick={() => onViewSources()}>{t('在灵感画布中查看')}</button>
         </div>
-        <div className="md-merged-sources">{sources.map(source => <button type="button" key={source.id} title={source.title} onClick={event => onViewSources(source.id, event)}>{source.title}</button>)}</div>
+        <div className="md-merged-sources">{sources.map(source => <IdeaSourcePreview key={source.id} item={source} onViewItem={event => onViewSources(source.id, event)} />)}</div>
       </section>
       {production?.format ? <span className="md-merged-format">{t('当前形式')} · {outputFormatLabel(format)}</span> : null}
       {!running ? <StylePicker /> : null}
       {!running ? <OutputFormatPicker value={format} onChange={next => setDesk({ outputFormat: next })} /> : null}
       {!running ? <ContentVisualConfig format={format} imageCount={imageCount} shotCount={shotCount} onChange={next => { if (next.imageCount !== undefined) setImageCount(next.imageCount); if (next.shotCount !== undefined) setShotCount(next.shotCount) }} /> : null}
-      {canStart ? <button type="button" className="md-go" onClick={() => onGenerate(format, { imageCount: Number(imageCount), shotCount: Number(shotCount) })}>{production?.status === 'done' ? t('按此形式重新成稿') : t('确认并合并成稿')}</button> : null}
+      {!running ? <ContentLengthConfig format={format} value={targetLength} onChange={setTargetLength} /> : null}
+      {canStart ? <button type="button" className="md-go" disabled={!validTargetLength(format, targetLength)} onClick={() => onGenerate(format, { imageCount: Number(imageCount), shotCount: Number(shotCount), targetLength: format === 'video' ? undefined : Number(targetLength) })}>{production?.status === 'done' ? t('按此形式重新成稿') : t('确认并合并成稿')}</button> : null}
       {running ? <ProgressCard production={{ ...production, id: draft.id }} live={null} settings={settings} /> : null}
       {production?.status === 'failed' ? <p className="md-idea-hint is-error">{production.error}</p> : null}
       {production?.notice ? <p className="md-idea-hint">{production.notice}</p> : null}
+      <SourceMaterials materials={production?.sourceMaterials} running={running} />
     </div>
   )
 }

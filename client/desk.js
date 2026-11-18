@@ -158,10 +158,10 @@ export function closeItem() {
 }
 
 /** 一键成稿。任务在 Host 里跑，这里只负责启动和看进度。 */
-export async function runProduce(id, { format = 'article', references = [], imageCount, shotCount } = {}) {
+export async function runProduce(id, { format = 'article', references = [], imageCount, shotCount, targetLength } = {}) {
   try {
     await productionEdits.get(id)?.pending
-    const data = await request('produce', { id, format, references, imageCount, shotCount })
+    const data = await request('produce', { id, format, references, imageCount, shotCount, targetLength })
     productionEdits.delete(id)
     setDesk({ state: data.state })
   } catch (err) {
@@ -169,10 +169,10 @@ export async function runProduce(id, { format = 'article', references = [], imag
   }
 }
 
-export async function runProduceMerge(sourceIds, { format = 'article', references = [], draftId = null, imageCount, shotCount } = {}) {
+export async function runProduceMerge(sourceIds, { format = 'article', references = [], draftId = null, imageCount, shotCount, targetLength } = {}) {
   try {
     await productionEdits.get(draftId)?.pending
-    const data = await request('produce/merge', { sourceIds, format, references, draftId, imageCount, shotCount })
+    const data = await request('produce/merge', { sourceIds, format, references, draftId, imageCount, shotCount, targetLength })
     productionEdits.delete(data.id)
     setDesk({ state: data.state, mergedId: data.id, focusId: data.id, outputFormat: format })
     return data.id

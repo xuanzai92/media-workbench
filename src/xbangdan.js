@@ -1,9 +1,11 @@
 // xbangdan 公开榜单读取：只访问固定的公开 JSON，不接受客户端传入 URL。
-import { tr } from './i18n.js'
+import { byLang, tr } from './i18n.js'
 
-const FEED_URL = 'https://xbangdan.com/hot.json'
+const FEED_URLS = ['https://xbangdan.com/hot.json', 'https://x-track.jedeeai.com/hot.json']
 const REQUEST_TIMEOUT_MS = 15_000
 const FEED_CACHE_TTL_MS = 60_000
+const FEED_MAX_AGE_MS = 6 * 60 * 60 * 1000
+const FEED_FUTURE_TOLERANCE_MS = 10 * 60 * 1000
 const SECTIONS = new Set(['rate', 'views'])
 const CATEGORIES = new Set(['all', 'ai', 'finance', 'self_media'])
 const HOURS = new Set([3, 6, 12, 24])
@@ -73,13 +75,30 @@ export async function fetchXbangdan({ section = 'rate', category = 'all', hours 
   const normalizedHours = Number(hours)
   validateOptions({ section, category, hours: normalizedHours })
   const loadFeed = async () => {
-    const response = await fetchImpl(`${FEED_URL}?t=${Date.now()}`, {
-      method: 'GET',
-      headers: { accept: 'application/json', 'user-agent': 'media-workbench/1.0' },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    })
-    if (!response.ok) throw Object.assign(new Error(tr('xbangdan 返回了错误（{status}）', { status: response.status })), { status: 502 })
-    try { return await response.json() } catch { throw Object.assign(new Error(tr('xbangdan 返回的内容不是有效 JSON')), { status: 502 }) }
+    let firstError
+    for (const url of FEED_URLS) {
+      try {
+        const response = await fetchImpl(`${url}?t=${Date.now()}`, {
+          method: 'GET',
+          headers: { accept: 'application/json', 'user-agent': 'media-workbench/1.0' },
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        })
+        if (!response.ok) throw Object.assign(new Error(tr('xbangdan 返回了错误（{status}）', { status: response.status })), { status: 502 })
+        let data
+        try { data = await response.json() } catch { throw Object.assign(new Error(tr('xbangdan 返回的内容不是有效 JSON')), { status: 502 }) }
+        if (!data || typeof data !== 'object' || !Array.isArray(data.rate) || !Array.isArray(data.views) || !Number.isFinite(data.updated)) {
+          throw Object.assign(new Error(byLang('xbangdan 榜单数据格式异常', 'xbangdan returned an invalid feed')), { status: 502 })
+        }
+        const age = Date.now() - data.updated * 1000
+        if (age > FEED_MAX_AGE_MS || age < -FEED_FUTURE_TOLERANCE_MS) {
+          throw Object.assign(new Error(byLang('xbangdan 榜单更新时间异常或数据已过期', 'xbangdan feed is stale or has an invalid update time')), { status: 502 })
+        }
+        return data
+      } catch (error) {
+        if (!firstError) firstError = error
+        else throw Object.assign(new Error(`${firstError.message}；${byLang('备用数据源', 'Backup source')}: ${error.message}`), { status: 502 })
+      }
+    }
   }
 
   // Do not share test/injected fetch implementations across calls. In the app,

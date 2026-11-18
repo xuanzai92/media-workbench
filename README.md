@@ -1,260 +1,74 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-zh-dark.webp">
-    <img src="docs/assets/hero-zh-light.webp" alt="自媒体工作台：从一句灵感到一篇可发布的内容" width="100%">
-  </picture>
-</p>
+<p align="center"><img src="docs/assets/hero-zh-light.webp" alt="Media Workbench" width="100%"></p>
 
-<h1 align="center">Media Workbench</h1>
+# Media Workbench
 
-<p align="center"><b>DeepSeek Harness 的内容创作工作台：记灵感、做成稿、排期和复盘，一处完成。</b></p>
+Media Workbench 是 DeepSeek Harness 的内容创作插件，帮助你发现选题、收集灵感、生成内容、安排发布并复盘表现，支持桌面版和网页版。当前界面为中文。
 
-<p align="center">
-  <a href="#三步上手">安装</a> ·
-  <a href="#功能">功能</a> ·
-  <a href="#模型与服务">模型与服务</a> ·
-  <a href="#问答">问答</a> ·
-  <a href="README.en.md">English</a>
-</p>
-
-<p align="center">
-  <img alt="DeepSeek Harness plugin" src="https://img.shields.io/badge/DeepSeek%20Harness-plugin-111?style=flat-square">
-  <img alt="Desktop and web" src="https://img.shields.io/badge/Desktop-web-111?style=flat-square">
-  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/MIT-open%20source-111?style=flat-square"></a>
-</p>
-
-<br>
-
-## 它是什么
-
-Media Workbench 是一个装在 DeepSeek Harness 侧栏里的内容创作工作台。把一句灵感、一个链接或一段素材记下来，就能继续生成文章、图文或视频脚本；修改并导出后拖到日历排期，再回到复盘页查看表现。
-
-工作台支持中文和英文界面，桌面版和网页版都能使用。内容默认保存在本机，可以切换到自定义目录。
+[English](README.en.md) · [功能](#功能) · [安装](#安装) · [配置与数据](#配置与数据) · [开发](#开发)
 
 ## 功能
 
-### 一键成稿
+- **热点与榜单**：浏览 AI Hot 的资讯和热点事件、X 热门内容，以及 RedFox 的小红书和抖音榜单；支持筛选并将感兴趣的内容收藏或采集到灵感。RedFox 榜单当前固定为「数码科技」赛道。
+- **灵感**：保存笔记、金句、链接、图片和视频，在自由画布或信息流中浏览、筛选和整理；查看相关灵感，也可以选择多条灵感合并成稿。
+- **创作**：基于灵感生成文章、图文或视频脚本。文章包含标题、正文和文内配图；图文包含标题、短配文和有序图片；视频创作包含口播脚本、封面和分镜。支持编辑、对话修改、撤销及单张配图重试。
+- **内容管理与导出**：在看板或表格中搜索、排序和管理内容状态。文章和图文可复制全文或导出 Markdown 与图片；视频可导出脚本、封面和分镜。生成结果会提示文字降级、缺图和图片失败，未补齐时也可导出当前版本。
+- **排期与发布交接**：在日历中拖动灵感或成稿安排日期。完成的成稿可交接给爱贝壳，仍需在爱贝壳选择平台并完成发布；扩展未接收时可以复制内容和素材链接。
+- **复盘**：手动录入、粘贴 CSV 或导入自己的公开账号数据，查看趋势、平台分布和内容表现，并从数据中学习写作规则。
+- **风格与助手**：使用或编辑预设风格，从文字、链接或公开账号提炼个人风格；管理写作规则并导出为 Skill。侧边助手可回答工作台相关问题并协助操作。
+- **本地 Markdown**：将灵感、成稿和附件保存在本机，支持自定义数据目录，与 Obsidian 内容同步，并导入 `外部采集/` 中的 Markdown。
 
-<table>
-<tr>
-<td width="62%">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/f-studio-dark.webp">
-    <img src="docs/assets/f-studio-light.webp" width="100%" alt="成稿工作区：左边对话，右边是标题、封面、脚本和六格分镜">
-  </picture>
-</td>
-<td valign="top">
-<p><b>一次生成完整结构。</b></p>
-<p>文章生成标题、完整正文和文内配图；图文生成标题、短配文和有顺序的一组图片。视频继续支持口播脚本、封面和分镜。</p>
-<p><b>用一句话修改。</b></p>
-<p>标题和正文可以直接编辑，也可以让助手改写。配图失败后可单张重试，保留正文和其他图片；手动编辑支持撤销。</p>
-<p><b>导出后直接使用。</b></p>
-<p>复制包含标题的全文，或导出 Markdown 和图片。文章的配图位置与预览一致，图文按顺序编号。</p>
-</td>
-</tr>
-</table>
+## 安装
 
-文章和图文会分别显示正文状态与配图完成数量。模型降级的结构草稿、缺图和单张图片失败会明确提示；纯文字文章可以不配图，图文至少需要一张图片。未补齐时仍可「导出当前版本」，导出说明会列出缺失项及需要核对的旧版图片；正文核对和配图完成后才开放发布交接。
-
-中文界面导出 `文章.md` 或 `图文.md`，英文界面导出 `article.md` 或 `post.md`，同时保存编号图片和 `导出说明.txt` / `export-notes.txt`。导出前会检查所有本地图片；丢失文件或尚未转为本地附件的外链图片会阻止导出并说明原因。重复导出保留用户文件，说明中列出本次文件清单；如果旧导出文件不属于当前版本，也会明确列出，使用时按本次清单选择。视频原有的脚本、封面和分镜导出继续兼容。
-
-### 灵感墙
-
-<table>
-<tr>
-<td valign="top" width="38%">
-<p><b>随手记，自动整理。</b></p>
-<p>文字、链接、图片、视频和金句都可以保存为卡片。支持自由画布和按时间排列的信息流。</p>
-<p><b>相关内容会聚在一起。</b></p>
-<p>输入关键词后，已有相关灵感会按关联程度排列到旁边。</p>
-<p><b>侧边助手随时可用。</b></p>
-<p>可以直接询问今天的灵感、近期排期，或修改后续写作规则。</p>
-</td>
-<td>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/f-home-dark.webp">
-    <img src="docs/assets/f-home-light.webp" width="100%" alt="灵感墙的散落视图和信息流视图">
-  </picture>
-</td>
-</tr>
-</table>
-
-### 排期、复盘和风格
-
-<table>
-<tr>
-<td width="62%">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/f-schedule-dark.webp">
-    <img src="docs/assets/f-schedule-light.webp" width="100%" alt="排期日历和待排期内容">
-  </picture>
-</td>
-<td valign="top">
-<p><b>排期。</b> 把成稿拖到日历中的某一天，管理待发布内容和连续创作记录。</p>
-<p><b>复盘。</b> 手动录入、粘贴 CSV，或导入自己的账号，查看趋势、平台分布和表现较好的内容。</p>
-<p><b>风格。</b> 使用内置风格预设，或从自己的账号和文章中提炼一张可以继续编辑的风格卡。</p>
-</td>
-</tr>
-</table>
-
-支持小红书、抖音、B 站、公众号，以及 TikTok、Instagram、YouTube 和 X 的内容整理与排期。成稿完成后可以点击「一键发布」生成短期发布任务并打开爱贝壳交接页；交接页会尝试把标题、正文、Markdown、标签和素材引用交给爱贝壳，随后由你选择平台并完成最终发布。
-
-## 三步上手
-
-要求 DeepSeek Harness `0.2.1-rc.5` 及以上的 `0.2.x` 版本。
-
-**1. 安装。** 包名 `media-workbench` 已发布到 npm。按你使用的来源选择一种安装方式：
-
-从 npm 安装（推荐）：
+需要 DeepSeek Harness `>=0.2.1-rc.5 <0.3.0` 和 Node.js 20 或更高版本。选择需要的 profile 安装：
 
 ```bash
 dsh plugin --profile desktop add media-workbench
 dsh plugin --profile web add media-workbench
 ```
 
-当前目录开发（推荐）：
+也可在桌面版的「插件」→「添加插件」中输入 `media-workbench`。命令行安装前请完全退出桌面版，安装后重新打开；网页版安装后重启 `dsh web`。如果找不到 `dsh`，先在桌面版菜单中启用命令行工具。
 
-```bash
-dsh plugin --profile desktop add "file:/绝对路径/media-workbench"
-dsh plugin --profile web add "file:/绝对路径/media-workbench"
+打开侧栏中的「自媒体工作台」即可开始。首次使用会显示示例数据，可通过「示例数据 · 清空」移除。更新时重新执行安装命令；卸载时将 `add` 改为 `remove`，卸载插件不会删除内容。
+
+本地开发版本可使用 `dsh plugin --profile web add "file:/绝对路径/media-workbench"` 安装。npm 发布版本的功能可能与此仓库当前代码不同。
+
+## 配置与数据
+
+在工作台设置中选择数据目录，并按需配置外部服务：
+
+| 用途 | 配置与限制 |
+| --- | --- |
+| 文字生成 | 使用 DeepSeek Harness 中配置的文字模型；不可用时会生成需要核对的结构草稿。 |
+| 图片生成 | 配置兼容 OpenAI `/images/generations` 的图片 API，或使用受支持的 DSH 生图工具；未配置时仍可生成文字。 |
+| 账号导入和社媒榜单 | 配置 [RedFox API Key](https://redfox.hk/apis?source=doc)。账号导入支持小红书、抖音、B 站、TikTok、Instagram 和 X 的公开数据；可用字段和费用以服务为准。 |
+
+默认数据目录为 `~/.dsh/media-workbench/`，可在设置中更改。主要文件包括：
+
+```text
+外部采集/          外部 Markdown 输入目录
+灵感/<id>.md       灵感
+内容/<id>/内容.md  成稿
+attachments/       图片、视频等附件
+state.json         工作台状态
 ```
 
-从 GitHub 安装：
+工作台会同步灵感和成稿的 Markdown；打开工作台或在设置中点击「同步本地 Obsidian 内容」可读取本地变更。`外部采集/` 中的文件成功导入后会移入 `灵感/`，失败的文件会保留以便重试；也兼容导入 `内容选题/<作者>/*.md`。可将整个数据目录作为 Obsidian vault 使用。删除工作台中的灵感或成稿时，对应的 Markdown 文件或成稿目录也会删除。
 
-```bash
-dsh plugin --profile desktop add github:xuanzai92/media-workbench
-dsh plugin --profile web add github:xuanzai92/media-workbench
-```
-
-GitHub 安装会在本机执行 `prepare` 来生成浏览器端的 `dist/client.js`。如果 pnpm 提示需要允许构建，在对应 profile 的 `$DSH_HOME/profiles/<profile>/pnpm-workspace.yaml` 中加入下面的配置，再重新执行安装：
-
-```yaml
-allowBuilds:
-  media-workbench: true
-```
-
-也可以先在仓库目录执行 `npm pack`，再安装生成的 tarball；这种方式已经包含构建后的浏览器端文件：
-
-```bash
-npm pack
-dsh plugin --profile web add "file:/绝对路径/media-workbench-1.0.2.tgz"
-```
-
-桌面版「插件」→「添加插件」也可以直接输入 `media-workbench`。
-
-命令行安装前，桌面版需要完全退出（⌘Q），安装后重新打开；网页版安装后重启 `dsh web`。如果终端里没有 `dsh`，先在桌面版菜单中启用命令行工具。
-
-**2. 打开。** 侧栏会出现「自媒体工作台」。第一次打开会有示例数据，确认流程后可以点击右上角「示例数据 · 清空」。
-
-**3. 更新或卸载。** 更新时重新执行安装命令；卸载时将 `add` 换成 `remove`。
-
-```bash
-dsh plugin --profile desktop remove media-workbench
-```
-
-卸载不会删除内容。状态、设置和导入媒体默认保存在 `~/.dsh/media-workbench/`，可以在设置中改成自定义本地路径。工作台会在这个根目录下自动管理 `外部采集/`、`灵感/`、`内容/` 和 `attachments/`，不需要再单独填写成稿保存路径。
-
-### 本地 Markdown 与 Obsidian
-
-工作台数据目录是本机目录。没有设置时使用 `~/.dsh/media-workbench/`；设置里的自定义路径会写入一个位置指针，实际数据仍留在你选择的目录中。目录里主要有这些内容：
-
-- `state.json`：工作台运行状态，供应用快速读取和撤销。
-- `attachments/`：上传图片、封面、配图和分镜文件。旧版本的 `files/` 会在读取工作台时复制到这里，旧链接仍然可以读取。
-- `外部采集/`：外部工具或浏览器采集内容的输入目录。可以把 Markdown 文件按主题放进子目录，首次同步后会整理成灵感并移入 `灵感/`。
-- `灵感/<id>.md`：每条灵感一个 Markdown 文件，包含标题、正文、来源、标签、状态和稳定 ID。
-- `内容/<id>/内容.md`：每个合并成稿或普通成稿一个文件夹和一个 Markdown 主文件。`format` 字段记录 `article`、`image_text` 或 `video`，文件夹按内容 ID 组织，避免同一内容因为形式变化而散落成多份。
-
-采集灵感、修改灵感、开始成稿和生成画面时，工作台会把最新状态同步到这些 Markdown 文件。打开工作台或点击设置里的「同步本地 Obsidian 内容」时，会扫描 `外部采集/`、`灵感/`、`内容/` 和兼容的 `内容选题/<作者>/*.md`。`外部采集/` 是一次性输入队列：其中的 Markdown 会按标题、正文、标签和来源整理为灵感，缺少 frontmatter 或稳定 `id` 时按相对路径生成稳定 ID，成功写入工作台并持久化后移动到同一数据目录的 `灵感/`；写入失败会保留原文件，方便下次重试。`内容/` 根下的普通 Markdown 可以直接作为成稿导入，`内容选题` 下没有稳定 `id` 的文件会按相对路径生成稳定 ID，`type`、`tags`、`发布渠道` 和 `发布时间` 会映射到工作台字段，根目录的汇总文件和模板会跳过。灵感文件中的自定义 frontmatter 字段会保存在 `markdownMeta`，正文中的自定义 Markdown 区块会保留。内容文件的标题、正文、形式、来源 ID、状态、平台和排期可以回传；封面、配图和分镜表格保留工作台已有的媒体运行态，不会把 Obsidian 表格直接当成新的媒体配置。文件之间使用相对链接，直接把整个数据目录作为 Obsidian vault 即可查看和继续编辑。
-
-这三个目录都位于设置里的「工作台数据目录」下。若你把 `外部采集/` 建在项目根目录，请把工作台数据目录设置为该项目根目录；默认目录仍是 `~/.dsh/media-workbench/`。
-
-应用不会按天复制同一条灵感。相同 ID 会更新原文件；只要你不删除文件，灵感和成稿会一直保存在本地。在工作台删除灵感时，会同时删除对应的 `灵感/<id>.md`；删除成稿时，会删除对应的 `内容/<id>/`，但保留原始灵感。媒体文件仍由工作台的状态和成稿生命周期管理。
-
-## 模型与服务
-
-插件本身免费开源，不包含任何密钥。需要模型的功能使用你在 DeepSeek Harness 中配置的账号。
-
-| 功能 | 配置 | 未配置时 |
-| --- | --- | --- |
-| 写标题、脚本和分镜文案 | DeepSeek Harness 中的文字模型 | 生成结构草稿 |
-| 生成封面、配图和分镜图 | OpenAI 兼容的图片接口，或 DSH 已注册的生图工具 | 仍可生成文字，封面使用纯文字版本 |
-| 导入账号和数据 | RedFox API Key（可选） | 手动录入数据，或粘贴内容提炼风格 |
-
-图片接口使用 `POST {接口地址}/images/generations`。设置中提供常见服务的预设，也可以填写自定义地址。生图密钥只保存在本机 `settings.json`，不会写入内容数据或发送给文字模型。
-
-如果选择 DSH 生图工具，工作台会复用已注册且兼容的图片工具；工具未安装、宿主版本不支持或账号额度不足时，可以切回 HTTP 图片接口。
-
-## 导入自己的账号
-
-在「风格」或「复盘」页点击「导入账号」，粘贴自己的主页链接。支持小红书、抖音、B 站、TikTok、Instagram 和 X。只读取公开内容，导入后会更新内容数据、互动数据和风格信息。
-
-首次使用需要在设置中填写 [RedFox API Key](https://redfox.hk/apis?source=doc)。实际可读取的字段和费用以 RedFox 接口与账户余额为准。请只导入自己有权使用的账号，并遵守平台规则。
-
-## 问答
-
-<details>
-<summary><b>没有生图模型也能用吗？</b></summary>
-<br>
-
-能。标题、脚本和分镜文案仍然可以生成，封面会使用纯文字版本。接入图片模型后，封面、配图和分镜图也会生成。
-
-</details>
-
-<details>
-<summary><b>可以直接发布到平台吗？</b></summary>
-<br>
-
-成稿完成后点击「一键发布」即可进入爱贝壳交接流程。工作台会创建一个 15 分钟有效的一次性发布任务，打开同源交接页，并尝试通过 Chrome 扩展消息把标题、正文、Markdown、标签和素材引用交给爱贝壳；你仍需要在爱贝壳中选择平台并完成最终发布。爱贝壳没有接收消息时，交接页提供复制标题、正文、Markdown 和素材链接的回退操作。工作台不保存平台 Cookie 或密码。
-
-</details>
-
-<details>
-<summary><b>数据会上传到云端吗？</b></summary>
-<br>
-
-状态、设置和导入媒体默认保存在本机。只有你主动配置的模型、图片服务或 RedFox 会收到对应请求所需的数据。
-
-</details>
-
-<details>
-<summary><b>这是 DeepSeek 官方产品吗？</b></summary>
-<br>
-
-不是。Media Workbench 是社区插件，与 DeepSeek 独立维护。
-
-</details>
+状态、设置和媒体保存在本机；使用模型、榜单、账号导入或发布交接时，相关数据会发送给对应服务。图片和 RedFox 密钥保存在本机设置中。导出前会检查本地图片是否可用；缺失或尚未转为本地附件的外链图片会阻止导出。
 
 ## 开发
 
 ```bash
 npm install
-npm test                  # Host 逻辑测试
-npm run build             # 构建 client/dist
-npm run watch             # 监听 client/ 并重新打包
-scripts/dev-sandbox.sh    # 在隔离的 DSH_HOME 中运行网页版
-node scripts/mock-llm.mjs # 使用本地模拟模型，不消耗额度
-npm pack                  # 生成可安装的 tgz
+npm test
+npm run build             # 构建 dist/client.js
+npm run watch
+scripts/dev-sandbox.sh    # 使用隔离的 DSH_HOME 启动网页版
+node scripts/mock-llm.mjs # 使用本地模拟模型
 ```
 
-| 目录 | 内容 |
-| --- | --- |
-| `client/` | 界面：灵感墙、成稿、对话、内容、排期、复盘、风格和设置 |
-| `src/` | Host 接口、成稿流水线、提示词、生图、风格提炼、账号导入和本地存储 |
-| `scripts/` | 打包、沙盒、模拟模型和示例素材生成 |
-| `assets/` | 示例图片和视频 |
-| `docs/assets/` | README 展示图 |
-| `test/` | Host、国际化、生图和导入相关测试 |
+`client/` 是界面，`src/` 是 Host 和业务逻辑，`test/` 是测试。修改 Host 后需要重启 DeepSeek Harness；修改界面后需要重新构建并刷新。
 
-修改 `src/` 后需要重启 DeepSeek Harness。Host 接口前缀是 `/media-workbench/`，本地上传和生成的媒体使用 `media-workbench/attachments/...` URI；旧的 `media-workbench/files/...` URI 仍兼容读取。
+[问题反馈](https://github.com/xuanzai92/media-workbench/issues) · [安全问题](https://github.com/xuanzai92/media-workbench/security/advisories/new) · [MIT License](LICENSE)
 
-## 反馈与安全
-
-- 项目主页：[github.com/xuanzai92/media-workbench](https://github.com/xuanzai92/media-workbench)
-- 问题反馈：[Issues](https://github.com/xuanzai92/media-workbench/issues)
-- 安全问题：请通过 [Security Advisories](https://github.com/xuanzai92/media-workbench/security/advisories/new) 私下报告
-
-每个接口都经过 Host 鉴权；模型输出和外部内容只保留需要的字段并限制长度，操作走白名单；外部链接不能访问本机和内网。
-
-<br>
-
-<p align="center"><sub><a href="LICENSE">MIT</a> · 社区插件，与 DeepSeek 无关。DeepSeek Harness 的名称和标识归其所有者所有。</sub></p>
+本项目是独立维护的社区插件，与 DeepSeek 无关。

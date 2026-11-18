@@ -3,15 +3,18 @@
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { articlePrompts, extractJson, fallbackArticle, fallbackPlan, normalizeOutputFormat, planPrompts, shortCoverText } from './ai.js'
-import { tr } from './i18n.js'
+import { currentLang, tr } from './i18n.js'
 import { coverPrompt, figurePrompt, shotPrompt } from './images.js'
 import { newId } from './ops.js'
 import { imageReady } from './settings.js'
+import { resolveSourceMaterial } from './source-material.js'
 
 const CONCURRENCY = 3
 // 模型卡住不出字时，到点改用草稿，不让进度条一直转
 const TEXT_TIMEOUT_MS = 240_000
 const RETRY_WAIT_MS = [6000, 14000]
+// Oversized requests should fail explicitly rather than silently omit source text.
+const MAX_MATERIAL_CHARS = 300_000
 
 function count(value, min, max, fallback) {
   if (value === null || value === undefined || value === '') return fallback
@@ -24,10 +27,41 @@ function contentSettings(settings, job) {
     ...settings,
     imageCount: Math.max(job.format === 'image_text' ? 1 : 0, count(job.imageCount, 0, 4, count(settings.imageCount, 0, 4, 2))),
     shotCount: count(job.shotCount, 0, 12, count(settings.shotCount, 0, 12, 6)),
+    targetLength: job.targetLength,
   }
 }
 
-const MERGED_SOURCE_BODY_LIMIT = 12000
+function targetLengthFor(format, requested, previous, settings = null) {
+  if (format === 'video') return null
+  const min = format === 'image_text' ? 100 : 300
+  const max = format === 'image_text' ? 2000 : 6000
+  const fallback = count(format === 'image_text' ? settings?.imageTextTargetLength : settings?.articleTargetLength, min, max, format === 'image_text' ? 450 : 1400)
+  return count(requested, min, max, count(previous, min, max, fallback))
+}
+
+function copiedSourceBody(article, sources) {
+  if (/【素材\s*\d+】|^\s*(?:标题|正文|来源|链接)：/m.test(article)) return true
+  const compact = value => String(value || '').replace(/\s+/g, '')
+  const output = compact(article)
+  const copied = sources.map(source => Math.max(...[source.body, source.sourceMaterial?.text].map(value => {
+    const body = compact(value)
+    return body.length >= 8 && output.includes(body) ? body.length : 0
+  })))
+  return copied.some(length => length >= 120)
+    || copied.filter(length => length >= 8).length >= 2 && copied.reduce((sum, length) => sum + length, 0) >= output.length * 0.5
+    || copied.some(length => length >= 30 && length >= output.length * 0.6)
+}
+
+function writtenLength(article) {
+  if (currentLang() === 'en') return (article.match(/[\u4e00-\u9fff]|[A-Za-z0-9][A-Za-z0-9'’-]*/g) || []).length
+  return article.replace(/\s/g, '').length
+}
+
+function farFromTarget(article, targetLength) {
+  const target = currentLang() === 'en' ? targetLength / 2 : targetLength
+  const actual = writtenLength(article)
+  return actual < target * 0.7 || actual > target * 1.3
+}
 
 function mergedSourceText(value, max = 240) {
   if (typeof value !== 'string') return ''
@@ -74,7 +108,9 @@ function findTarget(state, id) {
 }
 
 function referenceIds(value) {
-  return [...new Set((Array.isArray(value) ? value : []).map(row => typeof row === 'string' ? row : row?.id).filter(Boolean))].slice(0, 12)
+  const ids = [...new Set((Array.isArray(value) ? value : []).map(row => typeof row === 'string' ? row : row?.id).filter(Boolean))]
+  if (ids.length > 12) throw Object.assign(new Error(tr('一次最多使用 12 条参考素材，请减少后重试')), { status: 400 })
+  return ids
 }
 
 export function buildMergedItem(state, sourceIds, id = `merged_${sourceIds.join('_')}`) {
@@ -86,7 +122,7 @@ export function buildMergedItem(state, sourceIds, id = `merged_${sourceIds.join(
     body: sources.map((row, index) => [
       `【素材 ${index + 1}】`,
       `标题：${mergedSourceText(row.title)}`,
-      `正文：${mergedSourceText(row.body, MERGED_SOURCE_BODY_LIMIT)}`,
+      `正文：${typeof row.body === 'string' ? row.body.trim() : ''}`,
       `标签：${(row.tags ?? []).slice(0, 24).join('、')}`,
       `平台：${mergedSourceText(row.platform, 80)}`,
       `来源：${mergedSourceText(row.source)}`,
@@ -203,13 +239,14 @@ export class Producer {
   /**
    * @param {{store: object, settings: object, callText: Function, generate: Function, ready?: Function, onPersist?: Function}} deps - 存储、设置、文本模型、生图函数和可选的用户可见文件投影。
    */
-  constructor({ store, settings, callText, generate, ready = imageReady, onPersist = null }) {
+  constructor({ store, settings, callText, generate, ready = imageReady, onPersist = null, resolveMaterial = resolveSourceMaterial }) {
     this.store = store
     this.settings = settings
     this.callText = callText
     this.generate = generate
     this.ready = ready
     this.onPersist = onPersist
+    this.resolveMaterial = resolveMaterial
     this.jobs = new Map()
     this.assets = new Set()
   }
@@ -255,7 +292,7 @@ export class Producer {
     return state
   }
 
-  async start(id, { format = 'video', references = [], imageCount, shotCount } = {}) {
+  async start(id, { format = 'video', references = [], imageCount, shotCount, targetLength } = {}) {
     const normalized = normalizeOutputFormat(format)
     if (this.jobs.has(id)) return false
     const current = await this.store.read()
@@ -263,11 +300,11 @@ export class Producer {
     if (!item) throw Object.assign(new Error(tr('找不到这条灵感')), { status: 404 })
     const defaults = await this.settings.read()
     const previous = item.production ?? {}
-    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), sourceIds: [id], referenceIds: referenceIds(references), format: normalized, merged: false, imageCount: count(imageCount, 0, 4, count(previous.imageCount, 0, 4, count(defaults.imageCount, 0, 4, 2))), shotCount: count(shotCount, 0, 12, count(previous.shotCount, 0, 12, count(defaults.shotCount, 0, 12, 6))) }
+    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), sourceIds: [id], referenceIds: referenceIds(references), format: normalized, merged: false, imageCount: count(imageCount, 0, 4, count(previous.imageCount, 0, 4, count(defaults.imageCount, 0, 4, 2))), shotCount: count(shotCount, 0, 12, count(previous.shotCount, 0, 12, count(defaults.shotCount, 0, 12, 6))), targetLength: targetLengthFor(normalized, targetLength, previous.format === normalized ? previous.targetLength : null, defaults) }
     this.jobs.set(id, job)
     const state = await this.store.mutate('开始成稿', (draft) => {
       const target = draft.items.find(row => row.id === id)
-      target.production = { status: 'running', stage: 'brief', startedAt: new Date().toISOString(), title: target.title, article: '', format: normalized, imageCount: job.imageCount, shotCount: job.shotCount, sourceIds: [id], references: job.referenceIds, cover: null, images: [], shots: [] }
+      target.production = { status: 'running', stage: 'brief', startedAt: new Date().toISOString(), title: target.title, article: '', format: normalized, targetLength: job.targetLength, imageCount: job.imageCount, shotCount: job.shotCount, sourceIds: [id], references: job.referenceIds, cover: null, images: [], shots: [] }
       target.updatedAt = new Date().toISOString()
       return draft
     }, { undoable: false })
@@ -277,11 +314,14 @@ export class Producer {
     return true
   }
 
-  async startMerge(sourceIds, { format = 'video', references = [], draftId = null, imageCount, shotCount } = {}) {
+  async startMerge(sourceIds, { format = 'video', references = [], draftId = null, imageCount, shotCount, targetLength } = {}) {
     const normalized = normalizeOutputFormat(format)
-    const ids = [...new Set((Array.isArray(sourceIds) ? sourceIds : []).filter(Boolean))].slice(0, 12)
+    const ids = [...new Set((Array.isArray(sourceIds) ? sourceIds : []).filter(Boolean))]
+    if (ids.length > 12) throw Object.assign(new Error(tr('一次最多合并 12 条灵感，请减少后重试')), { status: 400 })
+    const refs = referenceIds(references)
     const current = await this.store.read()
     const sources = ids.map(id => current.items.find(row => row.id === id)).filter(Boolean)
+    if (sources.length !== ids.length) throw Object.assign(new Error(tr('部分来源灵感已不存在，请检查后重新成稿')), { status: 400 })
     if (sources.length < 2) throw Object.assign(new Error(tr('至少选择两条灵感才能合并成稿')), { status: 400 })
     const reusableId = typeof draftId === 'string' && draftId && current.mergedDrafts?.some(row => row.id === draftId)
     const id = reusableId ? draftId : newId('md')
@@ -297,7 +337,7 @@ export class Producer {
     }
     const defaults = await this.settings.read()
     const previous = (reusableId ? current.mergedDrafts.find(row => row.id === id)?.production : null) ?? {}
-    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), sourceIds: item.sourceIds, referenceIds: referenceIds(references), format: normalized, merged: true, imageCount: count(imageCount, 0, 4, count(previous.imageCount, 0, 4, count(defaults.imageCount, 0, 4, 2))), shotCount: count(shotCount, 0, 12, count(previous.shotCount, 0, 12, count(defaults.shotCount, 0, 12, 6))) }
+    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), sourceIds: item.sourceIds, referenceIds: refs, format: normalized, merged: true, imageCount: count(imageCount, 0, 4, count(previous.imageCount, 0, 4, count(defaults.imageCount, 0, 4, 2))), shotCount: count(shotCount, 0, 12, count(previous.shotCount, 0, 12, count(defaults.shotCount, 0, 12, 6))), targetLength: targetLengthFor(normalized, targetLength, previous.format === normalized ? previous.targetLength : null, defaults) }
     this.jobs.set(id, job)
     const state = await this.store.mutate('开始合并成稿', (draft) => {
       const target = draft.mergedDrafts.find(row => row.id === id)
@@ -306,7 +346,7 @@ export class Producer {
       target.status = target.status === 'archived' ? 'outline' : (target.status ?? 'outline')
       target.scheduledAt ??= null
       target.platform ??= null
-      target.production = { status: 'running', stage: 'brief', startedAt: new Date().toISOString(), title: item.title, article: '', format: normalized, imageCount: job.imageCount, shotCount: job.shotCount, sourceIds: item.sourceIds, references: job.referenceIds, cover: null, images: [], shots: [] }
+      target.production = { status: 'running', stage: 'brief', startedAt: new Date().toISOString(), title: item.title, article: '', format: normalized, targetLength: job.targetLength, imageCount: job.imageCount, shotCount: job.shotCount, sourceIds: item.sourceIds, references: job.referenceIds, cover: null, images: [], shots: [] }
       target.updatedAt = new Date().toISOString()
       return draft
     }, { undoable: false })
@@ -333,6 +373,7 @@ export class Producer {
     job.stage ??= 'brief'
     job.imageCount ??= null
     job.shotCount ??= null
+    job.targetLength ??= targetLengthFor(job.format, null, null)
     const { signal } = job.controller
     try {
       const settings = await this.settings.read()
@@ -341,11 +382,50 @@ export class Producer {
       const snapshot = JSON.parse(JSON.stringify(current))
       const sourceItems = job.sourceIds.map(sourceId => snapshot.items.find(row => row.id === sourceId)).filter(Boolean)
       const referenceItems = job.referenceIds.map(referenceId => snapshot.items.find(row => row.id === referenceId)).filter(row => row?.imported && !job.sourceIds.includes(row.id))
+      if (sourceItems.length !== job.sourceIds.length || referenceItems.length !== job.referenceIds.filter(referenceId => !job.sourceIds.includes(referenceId)).length) {
+        throw new Error(tr('部分来源灵感或参考素材已不存在，无法完整读取。请检查后重新成稿。'))
+      }
       const promptSources = [...sourceItems, ...referenceItems]
       const item = job.merged ? buildMergedItem(snapshot, job.sourceIds, id) : sourceItems[0]
       if (!item) throw new Error(tr('找不到这条灵感'))
 
       signal.throwIfAborted()
+      // A bounded worker pool avoids firing every external request at once.
+      const materials = new Array(promptSources.length)
+      let nextSource = 0
+      const loadMaterial = async () => {
+        while (nextSource < promptSources.length) {
+          signal.throwIfAborted()
+          const index = nextSource++
+          const source = promptSources[index]
+          let result
+          try {
+            result = await this.resolveMaterial(source, { signal })
+            signal.throwIfAborted()
+          } catch (error) {
+            signal.throwIfAborted()
+            result = { status: 'failed', text: '', reason: error?.message || tr('无法读取原文') }
+          }
+          const status = ['local', 'fetched', 'partial', 'failed'].includes(result?.status) ? result.status : 'failed'
+          materials[index] = {
+            id: source.id,
+            title: source.title || '',
+            url: source.url || null,
+            body: source.body || '',
+            text: typeof result?.text === 'string' ? result.text : '',
+            status,
+            reason: typeof result?.reason === 'string' ? result.reason : status === 'failed' ? tr('无法读取原文') : '',
+          }
+          source.sourceMaterial = { status: materials[index].status, text: materials[index].text.trim() === materials[index].body.trim() ? '' : materials[index].text, reason: materials[index].reason }
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(3, promptSources.length) }, loadMaterial))
+      signal.throwIfAborted()
+      await this.patch(id, production => { production.sourceMaterials = materials })
+      const materialChars = materials.reduce((total, row) => total + row.body.length + (row.text.trim() === row.body.trim() ? 0 : row.text.length), 0)
+      if (materialChars > MAX_MATERIAL_CHARS) {
+        throw new Error(tr('素材正文共 {count} 字，超过单次成稿的 {limit} 字上限。请减少素材或拆分后再试，系统没有截断原文。', { count: materialChars, limit: MAX_MATERIAL_CHARS }))
+      }
       const backup = normalizePlan(fallbackPlan(item, '', content, job.format), content, item.title, job.format)
 
       let plan
@@ -396,19 +476,41 @@ export class Producer {
       const writeArticle = async () => {
         let engine = 'local'
         let notice = null
+        let fallback = false
         let markdown = ''
         try {
-          const prompts = articlePrompts(snapshot, item, content.voice, plan, job.format, promptSources)
-          const result = await this.callText({ ...prompts, maxTokens: 6000, signal: AbortSignal.any([signal, AbortSignal.timeout(TEXT_TIMEOUT_MS)]), onText: (delta) => { job.text += delta } })
-          markdown = result.text
-          engine = result.model
-          if (!splitTitle(markdown, plan.title).article.trim()) throw new Error(tr('模型返回了空内容'))
+          const prompts = articlePrompts(snapshot, item, content.voice, plan, job.format, promptSources, content.targetLength)
+          const maxTokens = job.format === 'video' ? 6000 : Math.max(6000, Math.min(12000, Math.ceil(content.targetLength * 2)))
+          const sourceChars = promptSources.reduce((total, source) => total + String(source.body || '').length + String(source.sourceMaterial?.text || '').length, 0)
+          let retryReason = null
+          for (let attempt = 0; attempt < 2; attempt += 1) {
+            job.text = ''
+            const system = retryReason === 'copy' ? `${prompts.system}\n\n上一次输出直接拼接或照搬了素材正文。请重新组织为一篇新稿，不出现素材编号，也不要复制完整原文。`
+              : retryReason === 'length' ? `${prompts.system}\n\n上一次正文与目标字数差距较大。请按目标字数重新写完整内容，仍然只能使用有依据的细节。` : prompts.system
+            const result = await this.callText({ ...prompts, system, maxTokens, signal: AbortSignal.any([signal, AbortSignal.timeout(TEXT_TIMEOUT_MS)]), onText: (delta) => { job.text += delta } })
+            markdown = result.text
+            engine = result.model
+            const article = splitTitle(markdown, plan.title).article
+            if (!article.trim()) throw new Error(tr('模型返回了空内容'))
+            if (['article', 'image_text'].includes(job.format) && copiedSourceBody(article, promptSources)) {
+              if (attempt === 0) { retryReason = 'copy'; continue }
+              throw Object.assign(new Error(tr('模型返回了素材原文拼接')), { code: 'SOURCE_COPY' })
+            }
+            if (job.format !== 'video' && farFromTarget(article, content.targetLength)) {
+              if (attempt === 0 && sourceChars >= content.targetLength * 0.5) { retryReason = 'length'; continue }
+              notice = tr('目标约 {target} 字，当前约 {actual} 字；请核对篇幅和素材完整性。', { target: currentLang() === 'en' ? Math.round(content.targetLength / 2) : content.targetLength, actual: writtenLength(article) })
+            }
+            break
+          }
         } catch (err) {
           if (signal.aborted) throw err
           engine = 'local'
+          fallback = true
           markdown = fallbackArticle(snapshot, item, job.format)
           job.text = markdown
-          notice = tr('没有连上文字模型，先给你一份结构草稿。可以到 DeepSeek Harness 设置里检查模型。')
+          notice = err?.code === 'SOURCE_COPY'
+            ? tr('模型返回了素材原文拼接，已改为待补全的结构草稿。请核对素材后重新成稿。')
+            : tr('文字模型未能写出新稿，已保留待补全的结构草稿。请检查模型后重新成稿。')
         }
         const { article } = splitTitle(markdown, plan.title)
         await this.patch(id, (production) => {
@@ -416,7 +518,7 @@ export class Producer {
           production.aiArticle = article
           production.engine = engine
           production.notice = notice
-          production.textStatus = notice ? 'fallback' : 'done'
+          production.textStatus = fallback ? 'fallback' : 'done'
         })
       }
 

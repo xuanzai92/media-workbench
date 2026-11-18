@@ -77,6 +77,103 @@ test('文章写完整论证，图文写短配文并将阅读顺序交给图片',
   })
 })
 
+test('图文按目标字数重写灵感观点，合并文章按论证顺序融合多条正文', () => {
+  const state = buildSeed(new Date('2026-11-17T00:00:00Z'))
+  const sources = state.items.slice(0, 2).map((item, index) => ({ ...item, body: `作者观点 ${index + 1}：先核对事实再表达判断。` }))
+  const imageText = articlePrompts(state, sources[0], '', PLAN, 'image_text', [sources[0]], 520)
+  const article = articlePrompts(state, sources[0], '', PLAN, 'article', sources, 1600)
+  assert.match(imageText.system, /目标约 520 字/)
+  assert.match(imageText.system, /重新写正文/)
+  assert.match(article.system, /目标约 1600 字/)
+  assert.match(article.system, /不要按「素材一、素材二」分段/)
+  assert.match(planPrompts(state, sources[0], { imageCount: 0, shotCount: 0 }, 'article', sources).system, /outline 按论证顺序安排/)
+  assert.deepEqual(JSON.parse(article.user.replace(/^<material>|<\/material>$/g, '')).素材.map(row => row.正文), sources.map(row => row.body))
+})
+
+test('模型直接拼接多条灵感时重试；仍然拼接则只交付待补全草稿', async t => {
+  const { store, producer, textCalls } = await fixture(t, {
+    ready: false,
+    callText: async request => ({
+      text: isPlan(request.system) ? JSON.stringify(PLAN) : '【素材 1】\n正文：第一篇原文\n\n【素材 2】\n正文：第二篇原文',
+      model: 'mock-text',
+    }),
+  })
+  await store.mutate('test', state => {
+    state.items.find(row => row.id === 'seed_2').body = '第一篇原文'
+    state.items.find(row => row.id === 'seed_3').body = '第二篇原文'
+    return state
+  })
+  const id = await producer.startMerge(['seed_2', 'seed_3'], { format: 'article', imageCount: 0, targetLength: 1600 })
+  await waitDone(producer, id)
+  const production = target(await store.read(), id).production
+  assert.equal(production.targetLength, 1600)
+  assert.equal(production.textStatus, 'fallback')
+  assert.match(production.notice, /素材原文拼接/)
+  assert.doesNotMatch(production.article, /第一篇原文|第二篇原文|【素材/)
+  assert.equal(textCalls.length, 3, 'First source dump should trigger one rewriting attempt')
+  assert.match(textCalls[2].system, /上一次输出直接拼接/)
+})
+
+test('两篇短灵感不带素材标签地平铺，也不能被当成新文章', async t => {
+  const first = '先核对原始数据，再写自己的判断。'
+  const second = '保留不同观点的分歧，再提出结论。'
+  const { store, producer } = await fixture(t, {
+    ready: false,
+    callText: async request => ({ text: isPlan(request.system) ? JSON.stringify(PLAN) : `${first}\n\n${second}`, model: 'mock-text' }),
+  })
+  await store.mutate('test', state => {
+    state.items.find(row => row.id === 'seed_2').body = first
+    state.items.find(row => row.id === 'seed_3').body = second
+    return state
+  })
+  const id = await producer.startMerge(['seed_2', 'seed_3'], { format: 'article', imageCount: 0 })
+  await waitDone(producer, id)
+  const production = target(await store.read(), id).production
+  assert.equal(production.textStatus, 'fallback')
+  assert.doesNotMatch(production.article, /先核对原始数据|保留不同观点/)
+})
+
+test('个人默认字数用于新稿，重新成稿沿用原稿字数', async t => {
+  const { store, producer, textCalls } = await fixture(t, { ready: false, imageCount: 0 })
+  await producer.settings.update({ articleTargetLength: 1700, imageTextTargetLength: 480 })
+  await producer.start('seed_2', { format: 'article', imageCount: 0 })
+  await waitDone(producer, 'seed_2')
+  assert.equal(target(await store.read(), 'seed_2').production.targetLength, 1700)
+  assert.match(textCalls[1].system, /目标约 1700 字/)
+  assert.match(target(await store.read(), 'seed_2').production.notice, /目标约 1700 字/)
+  assert.equal(target(await store.read(), 'seed_2').production.textStatus, 'done', 'Length warning should not pretend the model failed')
+  await producer.settings.update({ articleTargetLength: 2000 })
+  await producer.start('seed_2', { format: 'article', imageCount: 0 })
+  await waitDone(producer, 'seed_2')
+  assert.equal(target(await store.read(), 'seed_2').production.targetLength, 1700)
+  await producer.start('seed_2', { format: 'image_text', imageCount: 1 })
+  await waitDone(producer, 'seed_2')
+  assert.equal(target(await store.read(), 'seed_2').production.targetLength, 480)
+})
+
+test('素材足够而初稿明显偏短时按目标字数重写一次', async t => {
+  let writes = 0
+  const { store, producer, textCalls } = await fixture(t, {
+    ready: false,
+    imageCount: 0,
+    callText: async request => ({
+      text: isPlan(request.system) ? JSON.stringify(PLAN) : ++writes === 1 ? '只写了一句。' : '新的观点和论证。'.repeat(55),
+      model: 'mock-text',
+    }),
+  })
+  await store.mutate('test', state => {
+    state.items.find(row => row.id === 'seed_2').body = '可供核实的事实与观点。'.repeat(35)
+    return state
+  })
+  await producer.start('seed_2', { format: 'image_text', targetLength: 450, imageCount: 1 })
+  await waitDone(producer, 'seed_2')
+  const production = target(await store.read(), 'seed_2').production
+  assert.equal(textCalls.length, 3)
+  assert.match(textCalls[2].system, /上一次正文与目标字数差距较大/)
+  assert.equal(production.textStatus, 'done')
+  assert.equal(production.notice, null)
+})
+
 test('图文不依赖文章锚点，图片顺序和主题仍保持；文章保留段落锚点', () => {
   const settings = { imageCount: 2, shotCount: 3 }
   const imageText = normalizePlan({ ...PLAN, cover: 'cover', shots: [{ prompt: 'shot' }] }, settings, 'T', 'image_text')
@@ -126,7 +223,7 @@ test('纯文字文章允许零张配图，成功正文具有独立完成状态',
   const p = target(await store.read(), 'seed_2').production
   assert.equal(p.status, 'done')
   assert.equal(p.textStatus, 'done')
-  assert.equal(p.notice, null)
+  assert.match(p.notice, /目标约 1400 字/)
   assert.equal(p.planNotice, null)
   assert.equal(p.imageCount, 0)
   assert.deepEqual(p.images, [])

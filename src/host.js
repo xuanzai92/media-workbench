@@ -730,11 +730,11 @@ async function route(ctx, store, desk, req, res) {
       return json(res, 200, { state })
     }
     case 'produce': {
-      const started = await desk.producer.start(String(body.id), { format: body.format, references: body.references, imageCount: body.imageCount, shotCount: body.shotCount })
+      const started = await desk.producer.start(String(body.id), { format: body.format, references: body.references, imageCount: body.imageCount, shotCount: body.shotCount, targetLength: body.targetLength })
       return json(res, 200, { started, state: await store.read() })
     }
     case 'produce/merge': {
-      const id = await desk.producer.startMerge(body.sourceIds, { format: body.format, references: body.references, draftId: body.draftId, imageCount: body.imageCount, shotCount: body.shotCount })
+      const id = await desk.producer.startMerge(body.sourceIds, { format: body.format, references: body.references, draftId: body.draftId, imageCount: body.imageCount, shotCount: body.shotCount, targetLength: body.targetLength })
       return json(res, 200, { id, state: await store.read() })
     }
     case 'produce/cancel':
